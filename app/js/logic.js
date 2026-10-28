@@ -247,7 +247,7 @@ export const FLOW_PICKUP=['received','accepted','preparing','ready','delivered']
 export const hasFlow=o=>!!o.flow;
 export const isPickup=o=>o.flow?.kind==='pickup';
 export function flowLabel(o,s=o.flow?.status){ const p=isPickup(o);
-  return ({received:'New (not accepted)',accepted:'Accepted',preparing:'Preparing',ready:p?'Ready for pickup':'Waiting for rider',out_for_delivery:'Dispatched',delivered:p?'Picked up':'Delivered',cancelled:'Cancelled'})[s]||s; }
+  return ({received:'New (not accepted)',accepted:'Accepted',preparing:'Preparing',ready:p?'Ready for pickup':'Waiting for rider',out_for_delivery:'Out for delivery',delivered:p?'Picked up':'Delivered',cancelled:'Cancelled'})[s]||s; }
 export function nextStatus(o){ const s=o.flow?.status; if(!s||s==='cancelled') return null; const seq=isPickup(o)?FLOW_PICKUP:FLOW_DELIVERY; const i=seq.indexOf(s); return i>=0&&i<seq.length-1?seq[i+1]:null; }
 export function nextLabel(o){ const n=nextStatus(o); if(!n) return null; const p=isPickup(o);
   return ({accepted:'Accept',preparing:'Start preparing',ready:p?'Ready for pickup':'Ready – waiting for rider',out_for_delivery:'Dispatch (rider left)',delivered:p?'Picked up':'Delivered'})[n]; }

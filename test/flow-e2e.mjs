@@ -44,6 +44,7 @@ test('Website delivery (COD): alert until Accept → Preparing → Waiting for r
   await p.click('[data-t=next]'); await H.sleep(p,300); o=await H.lastOrder(p); eq(o.flow.status,'delivered'); ok(['accepted','preparing','ready','out_for_delivery','delivered'].every(k=>o.flow.ts[k]),'missing timestamps');
   await flush(p); const rw=M.orders.get(w.id); eq(rw.status,'delivered'); eq(rw.rider_settlement,'cash'); eq(rw.rider_amount_received,1099); ok(Object.keys(rw.status_timestamps).length>=6,'remote ts');
   ok(M.patches.every(x=>!('total' in x.body)&&!('items' in x.body)),'POS only writes status/rider fields');
+  await ev(p,()=>__pos.App.user=null); await p.reload(); await p.waitForFunction(()=>window.__ready); await H.login(p,'shaheer','1111');
   await H.go(p,'reports'); ok((await p.textContent('[data-t=r-speedway]')).includes('1,099'),'speedway in report'); await p.ctx.close(); });
 
 test('Rider pays later: not drawer cash; receivables list; till card; settle via HBL', async()=>{ M.orders.clear(); M.patches=[]; const w=mkOrder(2,{zone:'C'}); w.status='ready'; M.orders.set(w.id,w);

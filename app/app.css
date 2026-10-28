@@ -371,3 +371,35 @@ header.top{height:var(--topbar);display:flex;align-items:center;gap:var(--s3);pa
 .modal-bg.inline .qcash::before{content:"Cash";font-weight:700;font-size:var(--fs-sm);width:100%;margin-bottom:2px}
 .modal-bg.inline .qt{min-height:40px}.modal-bg.inline .qcust input{min-height:40px}.modal-bg.inline .qcash::before{margin-bottom:0;line-height:16px}
 .modal-bg.inline .spart>*{min-height:40px!important}
+/* ---- polish pass 2 ---- */
+/* 1 charge panel: collapsible split + sticky footer */
+.modal-bg.inline details.qsplit>summary{list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center}
+.modal-bg.inline details.qsplit>summary::-webkit-details-marker{display:none}
+.modal-bg.inline details.qsplit:not([open])>summary small{display:none}
+.modal-bg.inline details.qsplit[open]>summary b{color:var(--text)}
+.modal-bg.inline .mbtns{position:sticky;bottom:0;background:var(--surface-2);padding:var(--s2) 0 var(--s1);margin-top:var(--s2);z-index:2;box-shadow:0 -8px 12px -8px #0009}
+/* 3 phone top bar */
+.mitem.phonly{display:none}
+@media (max-width:760px){
+  .blbl{display:none}
+  .hright{flex-wrap:nowrap!important;overflow-x:auto;scrollbar-width:none}.hright::-webkit-scrollbar{display:none}.hright>*{flex:none}
+  #locbtn,#logout{display:none!important}
+  .mitem.phonly{display:flex}
+  #rushbtn,#sndbtn{min-width:48px;padding:0 var(--s2)}
+  /* 6 order detail: drop unit price column */
+  .ditems th:nth-child(3),.ditems td:nth-child(3){display:none}
+  .ditems td:first-child{min-width:9em}.ditems td b{font-size:var(--fs-md,16px);line-height:1.3}.ditems td small{display:inline}
+}
+/* 5 heat row on one line, add-on chips */
+fieldset.heats{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--s1)}
+fieldset.heats>legend{grid-column:1/-1}
+fieldset.heats .hpick{min-width:0;justify-content:center;white-space:nowrap;font-size:var(--fs-sm)}
+label.adchip{position:relative;display:inline-flex;align-items:center;gap:var(--s2);min-height:48px;padding:0 var(--s3);border:1px solid var(--line);border-radius:var(--r2,10px);background:var(--surface-1);cursor:pointer;margin:0 var(--s1) var(--s1) 0}
+label.adchip input[type=checkbox]{appearance:none;-webkit-appearance:none;width:22px;height:22px;margin:0;border:2px solid var(--line-strong);border-radius:6px;background:transparent;display:grid;place-content:center;flex:none}
+label.adchip input[type=checkbox]:checked{background:var(--brand);border-color:var(--brand)}
+label.adchip input[type=checkbox]:checked::after{content:"✓";color:#111;font-weight:800;font-size:14px;line-height:1}
+label.adchip:has(input:checked){border-color:var(--brand)}
+label.adchip input:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+/* 6 quick cash no wrap */
+.modal-bg.inline .qt{white-space:nowrap}
+@media (max-width:1180px){.modal-bg.inline .qt{font-size:var(--fs-xs);padding:0 4px}}
