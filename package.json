@@ -1,0 +1,2 @@
+{"name":"moes-pos","private":true,"version":"1.0.0","type":"module",
+"scripts":{"build":"node tools/build.mjs","test:unit":"node test/logic.test.mjs","serve":"node tools/serve.mjs","print-helper":"node print-helper/server.cjs"}}

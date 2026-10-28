@@ -1,0 +1,2 @@
+{"name":"Moe's Hot Chicken POS","short_name":"Moe's POS","start_url":"./","scope":"./","display":"standalone","orientation":"any","background_color":"#111111","theme_color":"#ff6a00",
+"icons":[{"src":"icons/logo-192.png","sizes":"192x192","type":"image/png"},{"src":"icons/logo-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}]}

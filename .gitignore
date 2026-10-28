@@ -1,0 +1,22 @@
+# NEVER commit recipes, private data, secrets
+*recipe*
+*Recipe*
+*RECIPE*
+*_PRIVATE*
+*PRIVATE*
+backlog_import.json
+*backlog*.json
+moes-pos-private/
+private/
+.env
+.env.*
+*.pem
+*.key
+secrets*
+*secret*
+node_modules/
+dist/
+test/node_modules/
+test/artifacts/
+test-results/
+*.bin
