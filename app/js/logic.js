@@ -27,7 +27,29 @@ export function computeTotals(o, settings={}){
   if(o.channel==='website' && o.web?.total!=null) total=o.web.total; // server-recomputed website total is authoritative
   return {subtotal,discount,delivery,gst,total};
 }
-export const paid=o=>(o.payments||[]).reduce((a,p)=>a+(p.amount||0),0);
+// Customer payments only (rider settlement is NOT a customer payment). A COD delivery handed to a Speedway rider
+// counts as paid once: by the rider collecting o.rider.collect from the customer.
+export const isRiderPay=p=>!!(p&&(p.rider||p.method==='rider_fare'||p.method==='speedway_due'||p.ref==='Speedway settlement'));
+export const custPayments=o=>(o.payments||[]).filter(p=>!isRiderPay(p));
+export const paid=o=>custPayments(o).reduce((a,p)=>a+(p.amount||0),0)+(o.rider?.collect||0);
+// Rider settlement as report entries: what reached the shop (cash/bank/still owed) + the fare the rider kept.
+export function riderEntries(o){ const r=o.rider; if(!r) return []; const out=[]; const amt=r.amount||0;
+  if(amt>0) out.push(r.settledAt?{method:r.settledVia||'cash',amount:amt,bd:r.settledBd||null}:{method:'speedway_due',amount:amt});
+  if((r.collect||0)>amt) out.push({method:'rider_fare',amount:r.collect-amt}); return out; }
+// One-time repair for orders saved by the old dispatch code (rider settlement stored as payments, sometimes on top of a
+// counter payment for the same money). Returns a description of the change, or null.
+export function repairRiderPayments(o,policy={}){ if(!o?.rider&&!(o?.payments||[]).some(isRiderPay)) return null;
+  const old=o.payments||[]; const riderPs=old.filter(isRiderPay); let keep=old.filter(p=>!isRiderPay(p)); const notes=[];
+  if(riderPs.length) notes.push('moved '+riderPs.length+' rider settlement line(s) off the payments');
+  if(o.rider){ const conv=riderPs.find(p=>p.ref==='Speedway settlement'); if(conv&&!o.rider.settledBd) o.rider.settledBd=conv.bd||null;
+    const total=computeTotals(o,policy).total; let excess=keep.reduce((a,p)=>a+(p.amount||0),0)+(o.rider.collect||0)-total;
+    if(excess>0){ // the customer paid once: drop counter payments recorded at/after dispatch for the money the rider brought back
+      const later=keep.filter(p=>!p.settle&&!['hbl','bah'].includes(p.method)&&(p.at||0)>=(o.rider.at||0)).sort((a,b)=>b.at-a.at);
+      for(const p of later){ if(excess<=0) break; if((p.amount||0)>excess) continue; keep=keep.filter(x=>x!==p); excess-=p.amount||0; notes.push('removed duplicate '+p.method+' '+p.amount); }
+      if(excess>0){ o.rider.collect=Math.max(0,(o.rider.collect||0)-excess); notes.push('rider collect reduced by '+excess); }
+    }
+    o.rider.amount=Math.max(0,Math.min(o.rider.amount||0,o.rider.collect||0)); }
+  if(!notes.length) return null; o.payments=keep; if(o.change&&!keep.some(p=>p.method==='cash')) o.change=0; return notes.join('; '); }
 export const refunded=o=>(o.refunds||[]).reduce((a,r)=>a+(r.amount||0),0);
 export const isCounted=o=>o.status!=='void' && o.status!=='cancelled';
 // Outstanding (Pay Later / COD) amount on an order. Unpaid money is never cash in the drawer.
@@ -83,8 +105,8 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
   for(const o of counted){
     const t=computeTotals(o,policy); const c=ch(o.channel); c.orders++; c.gross+=t.total;
     if(o.channel==='foodpanda'){ r.fp.orders++; r.fp.gross+=t.total; }
-    for(const p of o.payments||[]){ if(p.settle&&p.bd&&p.bd!==o.businessDate) continue; (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; }
-    if(!(o.payments||[]).length && o.channel==='foodpanda'){ (r.byPay.fp_online??={count:0,amount:0}); r.byPay.fp_online.count++; r.byPay.fp_online.amount+=t.total; }
+    for(const p of [...custPayments(o),...riderEntries(o)]){ if((p.settle||p.bd)&&p.bd&&p.bd!==o.businessDate) continue; (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; }
+    if(!custPayments(o).length && o.channel==='foodpanda'){ (r.byPay.fp_online??={count:0,amount:0}); r.byPay.fp_online.count++; r.byPay.fp_online.amount+=t.total; }
     for(const l of o.lines||[]){
       const key=l.itemId+'|'+l.name; const it=r.items[key]??={itemId:l.itemId,name:l.name,units:0,amount:0,sample:!!l.sample};
       it.units+=l.qty||1; it.amount+=l.foc?0:(l.unitPrice||0)*(l.qty||1)+(l.lineTotalOverride!=null?l.lineTotalOverride-lineUnit(l)*(l.qty||1):0);
@@ -102,7 +124,7 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
   for(const o of orders.filter(o=>!isCounted(o))) r.adjustments.push({orderNo:o.orderNo,type:o.status,amount:computeTotals(o,policy).total,reason:o.voidReason||'',by:o.voidBy||''});
   r.dues={newCredit:counted.reduce((a,o)=>a+due(o,policy),0),creditOrders:counted.filter(o=>due(o,policy)>0).map(o=>({orderNo:o.orderNo,name:o.customer?.name||'',phone:o.customer?.phone||'',due:due(o,policy)})),collected:0,collectedList:[],outstanding};
   for(const p of settlements){ (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount; r.dues.collected+=p.amount; r.dues.collectedList.push(p); }
-  for(const o of counted) for(const p of o.payments||[]) if(p.settle&&p.bd===o.businessDate){ r.dues.collected+=p.amount; r.dues.collectedList.push({...p,orderNo:o.orderNo,name:o.customer?.name}); }
+  for(const o of counted) for(const p of custPayments(o)) if(p.settle&&p.bd===o.businessDate){ r.dues.collected+=p.amount; r.dues.collectedList.push({...p,orderNo:o.orderNo,name:o.customer?.name}); }
   // Speedway rider settlements for orders of this business date (cash counts in the drawer only once received)
   r.speedway={orders:counted.filter(o=>o.rider).map(o=>({orderNo:o.orderNo,zone:o.delivery?.zone,collect:o.rider.collect,fare:o.rider.fare,amount:o.rider.amount,method:o.rider.method,settledAt:o.rider.settledAt||null,settledVia:o.rider.settledVia||null})),pendingTonight:0,outstanding:null};
   r.speedway.pendingTonight=r.speedway.orders.filter(x=>x.method==='later'&&!x.settledAt).reduce((a,x)=>a+x.amount,0);

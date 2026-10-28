@@ -53,7 +53,7 @@ test('Rider pays later: not drawer cash; receivables list; till card; settle via
   await H.go(p,'till'); ok((await p.textContent('[data-t=till-sw-out]')).includes('939'),'till outstanding'); ok((await p.textContent('[data-t=till-sw-pending]')).includes('939'),'till tonight');
   await flush(p); eq(M.orders.get(w.id).rider_settlement,'pending_later');
   await H.go(p,'live'); await p.click('[data-t=rider-settle]'); await H.sleep(p); await p.check('[data-t=rs-hbl]'); await H.modalOk(p);
-  const o=await H.lastOrder(p); ok(o.rider.settledAt&&o.payments.some(x=>x.method==='hbl'&&x.settle),'settled');
+  const o=await H.lastOrder(p); ok(o.rider.settledAt&&o.rider.settledVia==='hbl'&&!o.payments.some(x=>x.rider),'settled');
   await flush(p); eq(M.orders.get(w.id).rider_settlement,'transfer'); eq(M.orders.get(w.id).rider_amount_received,939);
   await H.go(p,'till'); ok((await p.textContent('[data-t=till-sw-out]')).includes('0'),'outstanding cleared'); await p.ctx.close(); });
 

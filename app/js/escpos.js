@@ -25,9 +25,11 @@ export function receipt(o, settings={}){
   if(t.delivery) d.line(cols('Delivery '+(o.delivery.zone?'Zone '+o.delivery.zone:''),rs(t.delivery)));
   if(t.gst) d.line(cols('GST',rs(t.gst)));
   d.bold(1).line(cols('TOTAL',rs(t.total))).bold(0);
-  for(const p of o.payments||[]) d.line(cols('Paid: '+(PAY[p.method]||p.method),rs(p.amount)));
-  if(o.change) d.line(cols('Change',rs(o.change)));
-  { const due=Math.max(0,t.total-(o.payments||[]).reduce((a,p)=>a+(p.amount||0),0)); if(o.status!=='void'&&due>0) d.bold(1).line(cols(o.credit?'PAY LATER - DUE':'UNPAID - DUE',rs(due))).bold(0); }
+  const cps=(o.payments||[]).filter(p=>!(p.rider||p.method==='rider_fare'||p.method==='speedway_due'||p.ref==='Speedway settlement'));
+  for(const p of cps) d.line(cols('Paid: '+(PAY[p.method]||({rider_fare:'Speedway fare',speedway_due:'Speedway'})[p.method]||String(p.method).replace(/_/g,' ')),rs(p.amount)));
+  if(o.rider?.collect) d.line(cols('Paid: Cash on delivery',rs(o.rider.collect)));
+  if(o.change&&cps.some(p=>p.method==='cash')) d.line(cols('Change',rs(o.change)));
+  { const due=Math.max(0,t.total-cps.reduce((a,p)=>a+(p.amount||0),0)-(o.rider?.collect||0)); if(o.status!=='void'&&due>0) d.bold(1).line(cols(o.credit?'PAY LATER - DUE':'UNPAID - DUE',rs(due))).bold(0); }
   d.hr().align(1).line('Thank you! Stay hot.').line(settings.footer||'').cut(); return d;
 }
 export function kitchenTicket(o){

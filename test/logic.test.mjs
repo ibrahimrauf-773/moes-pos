@@ -39,4 +39,19 @@ assert.equal(L.computeTotals(m,{}).total,1399);
 const mb=L.webOrderToPos({...w,payment_method:'bank_bahl'},{webToPos:S.WEB_ITEM_MAP}); assert.equal(mb.payments[0].method,'bah');
 for(const k of ['accepted','ready','out_for_delivery','delivered']){ const t=L.customerMsg({...m,orderNo:'1700',flow:{...m.flow,status:k}},L.MSG_AT[k]); assert.ok(t.includes('1700'),k); }
 assert.equal(L.speedwayPending([{status:'done',rider:{method:'later',amount:500,settledAt:null}},{status:'done',rider:{method:'later',amount:300,settledAt:1}}]).reduce((a,x)=>a+x.amount,0),500);
+// rider settlement is not a customer payment; customer pays once
+{ const base={...o,status:'done',businessDate:'2026-10-28',createdAt:1,location:'main'};
+  const r={method:'cash',collect:2518,fare:360,amount:2158,at:100,settledAt:100,settledVia:'cash',settledBd:'2026-10-28'};
+  const ok={...base,payments:[],rider:r}; assert.equal(L.paid(ok),2518); assert.equal(L.due(ok,{}),0);
+  const later={...base,payments:[],rider:{...r,method:'later',settledAt:null,settledVia:null,settledBd:null}};
+  assert.deepEqual(L.riderEntries(later),[{method:'speedway_due',amount:2158},{method:'rider_fare',amount:360}]);
+  // #1607-style bad data: counter cash 2518 + rider lines cash 2100 + rider_fare 58
+  const bad={...base,id:'x1607',orderNo:1607,change:0,payments:[{method:'cash',amount:2518,at:200},{method:'cash',amount:2100,rider:true,at:100},{method:'rider_fare',amount:58,rider:true,at:100}],rider:{...r,collect:2158,fare:58,amount:2100}};
+  const note=L.repairRiderPayments(bad,{}); assert.ok(note); assert.equal(L.paid(bad),2518); assert.equal(L.due(bad,{}),0);
+  assert.ok(!bad.payments.some(L.isRiderPay)); assert.equal(L.repairRiderPayments(bad,{}),null);
+  // #1606-style: rider lines only, counter payment recorded after dispatch duplicating the rider cash
+  const b2={...base,id:'x1606',orderNo:1606,payments:[{method:'cash',amount:2158,rider:true,at:100},{method:'rider_fare',amount:360,rider:true,at:100},{method:'cash',amount:2518,at:300}],rider:{...r}};
+  L.repairRiderPayments(b2,{}); assert.equal(L.paid(b2),2518); assert.equal(b2.payments.length+(b2.rider.collect?1:0),1);
+  const rep=L.shiftReport({orders:[b2,ok]}); assert.equal(rep.byPay.cash.amount, 2158*2, 'no double count'); assert.equal(rep.byPay.rider_fare.amount, 720);
+}
 console.log('ALL LOGIC TESTS PASSED');

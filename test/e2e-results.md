@@ -70,26 +70,29 @@
 | 68 | Sync | Sync server down: sale still succeeds, error recorded, retried later | PASS |  |
 | 69 | Sync | Bad/expired session rejected by server, local data intact | PASS |  |
 | 70 | Printing | Laptop: receipt + kitchen ticket printed via helper (ESC/POS bytes), no recipe | PASS |  |
-| 71 | Printing | Printer offline: sale not blocked, job queued, retry prints later | PASS |  |
-| 72 | Printing | iPad: printing hidden, no print jobs | PASS |  |
-| 73 | Printing | iPad: Reprint receipt/kitchen on order row and detail use browser print dialog | PASS |  |
-| 74 | Printing | Laptop without helper: reprint falls back to browser print | PASS |  |
-| 75 | Customers | Phone search (+92 normalised) matches; prefs, usual heat default, repeat last order | PASS |  |
-| 76 | Customers | Quick add customer, dedupe by phone, profile edit and history | PASS |  |
-| 77 | Pay Later | Requires customer; unpaid not drawer cash; partial then full settle; dues in report | PASS |  |
-| 78 | Printing | Receipt and kitchen ticket show customer name; delivery receipt shows phone + address | PASS |  |
-| 79 | Log Inventory | Ayesha (PIN 7777) lands on Log Inventory; no POS/dashboard access | PASS |  |
-| 80 | Log Inventory | Waqar + Ayesha counts: mismatch flagged, duplicate blocked without owner, closing sets next stock, variance | PASS |  |
-| 81 | Log Inventory | Owner-approved edit keeps history | PASS |  |
-| 82 | Migration | Older device gets Ayesha, new sheet items and timers on upgrade | PASS |  |
-| 83 | Waste | Waste log deducts stock, shows reason/by; cost owner-only | PASS |  |
-| 84 | FOC | Item FOC by Waqar: Rs 0, stock deducted, listed separately | PASS |  |
-| 85 | FOC | Whole-order FOC needs owner/Waqar approval; others rejected | PASS |  |
-| 86 | KDS | Ticket timer turns amber at 12 min and red at 20 min; thresholds editable | PASS |  |
-| 87 | Dashboard | Owner dashboard: totals, AOV, hourly, top items, payment & channel split, previous days; cashier blocked | PASS |  |
-| 88 | Reports | Low-stock list for Supply in nightly report (reorder levels + Reorder flags from closing checklist) | PASS |  |
-| 89 | Layout | No horizontal overflow on any view at 1366x768 | PASS |  |
-| 90 | Layout | No horizontal overflow on any view at 1024x768 | PASS |  |
-| 91 | Layout | No horizontal overflow on any view at 768x1024 | PASS |  |
+| 71 | Printing | No helper: browser print fallback is ON by default (receipt + kitchen in one dialog) | PASS |  |
+| 72 | Printing | Printer offline: sale not blocked, job queued, retry prints later | PASS |  |
+| 73 | Printing | iPad: printing hidden, no print jobs | PASS |  |
+| 74 | Printing | iPad: Reprint receipt/kitchen on order row and detail use browser print dialog | PASS |  |
+| 75 | Modals | Order detail closes via Close, ✕, Esc and click-outside; confirm modal too | PASS |  |
+| 76 | Payments | Rider COD: one clean payment line; #1607 bad data repaired on load | PASS |  |
+| 77 | Printing | Laptop without helper: reprint falls back to browser print | PASS |  |
+| 78 | Customers | Phone search (+92 normalised) matches; prefs, usual heat default, repeat last order | PASS |  |
+| 79 | Customers | Quick add customer, dedupe by phone, profile edit and history | PASS |  |
+| 80 | Pay Later | Requires customer; unpaid not drawer cash; partial then full settle; dues in report | PASS |  |
+| 81 | Printing | Receipt and kitchen ticket show customer name; delivery receipt shows phone + address | PASS |  |
+| 82 | Log Inventory | Ayesha (PIN 7777) lands on Log Inventory; no POS/dashboard access | PASS |  |
+| 83 | Log Inventory | Waqar + Ayesha counts: mismatch flagged, duplicate blocked without owner, closing sets next stock, variance | PASS |  |
+| 84 | Log Inventory | Owner-approved edit keeps history | PASS |  |
+| 85 | Migration | Older device gets Ayesha, new sheet items and timers on upgrade | PASS |  |
+| 86 | Waste | Waste log deducts stock, shows reason/by; cost owner-only | PASS |  |
+| 87 | FOC | Item FOC by Waqar: Rs 0, stock deducted, listed separately | PASS |  |
+| 88 | FOC | Whole-order FOC needs owner/Waqar approval; others rejected | PASS |  |
+| 89 | KDS | Ticket timer turns amber at 12 min and red at 20 min; thresholds editable | PASS |  |
+| 90 | Dashboard | Owner dashboard: totals, AOV, hourly, top items, payment & channel split, previous days; cashier blocked | PASS |  |
+| 91 | Reports | Low-stock list for Supply in nightly report (reorder levels + Reorder flags from closing checklist) | PASS |  |
+| 92 | Layout | No horizontal overflow on any view at 1366x768 | PASS |  |
+| 93 | Layout | No horizontal overflow on any view at 1024x768 | PASS |  |
+| 94 | Layout | No horizontal overflow on any view at 768x1024 | PASS |  |
 
-**91/91 passed**
+**94/94 passed**

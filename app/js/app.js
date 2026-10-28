@@ -33,6 +33,7 @@ async function loadCfg(){ App.settings=await db.kvGet('settings'); App.policy=aw
 export async function boot(){
   try{ await db.open(); }catch(e){ document.body.innerHTML='<div class="fatal">Storage unavailable: '+esc(e.message)+'. In Safari, turn off Private Browsing.</div>'; return; }
   if(!await db.kvGet('deviceId')) await db.kvSet('deviceId',db.uid());
+  try{ for(const o of await db.all('orders')){ const note=L.repairRiderPayments(o,App.policy||{}); if(note){ await db.put('orders',o); await db.put('log',{id:db.uid(),at:Date.now(),staffId:'-',staffName:'system',action:'repair-rider-payments',detail:{order:o.orderNo,note}}); } } }catch(e){ console.warn('rider repair',e); }
   await seed(); await migrate(); await loadCfg();
   if(navigator.storage?.persist){ try{ const t=new Promise(r=>setTimeout(()=>r(false),1500)); const p=await Promise.race([(async()=>await navigator.storage.persisted()||await navigator.storage.persist())(),t]); App.persisted=!!p; }catch{ App.persisted=false; } }
   App.draft=await db.kvGet('draft',null);
@@ -50,12 +51,15 @@ async function safe(fn){ try{ return await fn(); }catch(e){ console.error(e); to
 
 // ---------- modal ----------
 function bindForm(w,res){ const f=$('form',w); f.onsubmit=e=>{ e.preventDefault(); const fd=Object.fromEntries(new FormData(f)); res(fd); };
-  const x=$('[data-x]',w); if(x) x.onclick=()=>{ w.remove(); res(null); }; }
+  const dismiss=()=>{ w.remove(); document.removeEventListener('keydown',w._esc); res(null); };
+  $$('[data-x]',w).forEach(x=>x.onclick=dismiss);
+  w.onmousedown=e=>{ w._down=e.target===w; }; w.onclick=e=>{ if(e.target===w&&w._down!==false) dismiss(); };
+  if(w._esc) document.removeEventListener('keydown',w._esc); w._esc=e=>{ if(e.key==='Escape'&&w.isConnected&&w===$$('.modal-bg').pop()){ e.preventDefault(); dismiss(); } }; document.addEventListener('keydown',w._esc); }
 function modal(title,body,{ok='OK',cancel='Cancel',wide=false}={}){ closeModal(); return new Promise(res=>{
-  const w=document.createElement('div'); w.className='modal-bg'; w.innerHTML=`<form class="modal ${wide?'wide':''}" data-t="modal"><h2>${esc(title)}</h2><div class="mbody">${body}</div><div class="err" data-t="modal-err"></div>
+  const w=document.createElement('div'); w.className='modal-bg'; w.innerHTML=`<form class="modal ${wide?'wide':''}" data-t="modal"><button type="button" class="mclose" data-x data-t="modal-close" aria-label="Close" title="Close (Esc)">✕</button><h2>${esc(title)}</h2><div class="mbody">${body}</div><div class="err" data-t="modal-err"></div>
    <div class="mbtns">${cancel?`<button type="button" class="btn ghost" data-x data-t="modal-cancel">${cancel}</button>`:''}<button class="btn primary" data-t="modal-ok">${ok}</button></div></form>`;
   document.body.append(w); const first=$('input:not([type=radio]):not([type=checkbox]),select,textarea',w); first&&first.focus(); bindForm(w,res); }); }
-function closeModal(){ $$('.modal-bg').forEach(m=>m.remove()); }
+function closeModal(){ $$('.modal-bg').forEach(m=>{ if(m._esc) document.removeEventListener('keydown',m._esc); m.remove(); }); }
 function modalErr(msg){ const e=$('[data-t=modal-err]'); if(e) e.textContent=msg; }
 async function form(title,body,validate,opts){ let r=await modal(title,body,opts);
   for(;;){ if(!r) return null; try{ const v=await validate(r); if(v!==false){ closeModal(); return v===true?r:v; } }catch(e){ modalErr(e.message); }
@@ -127,10 +131,10 @@ async function renderPOS(){
    <ul class="lines">${d.lines.map((l,i)=>`<li data-line="${i}"><div><b>${l.qty}× ${esc(l.name)}</b>${l.heat?` <span class="heat h-${l.heat.replace(/ /g,'')}">${l.heat}</span>`:''}${(l.addons||[]).map(a=>`<div class="sub">+ ${esc(a.name)} ${a.price?L.rs(a.price):''}</div>`).join('')}${l.note?`<div class="sub note">“${esc(l.note)}”</div>`:''}</div>
      <div class="lr"><span>${l.foc?`<b class="foc" data-t="line-foc-${i}">FOC</b>`:L.rs(L.lineTotal(l))}</span><button class="btn small ghost" data-foc="${i}" data-t="foc-line-${i}" title="Free of charge">${l.foc?'Undo FOC':'FOC'}</button><button class="btn small" data-qm="${i}">−</button><button class="btn small" data-qp="${i}">+</button><button class="btn small ghost" data-del="${i}">✕</button></div></li>`).join('')||'<li class="empty">Tap menu items to add</li>'}</ul>
    <textarea id="onote" data-t="onote" placeholder="Order note">${esc(d.note)}</textarea>
-   <div class="tot"><div><span>Subtotal</span><span data-t="subtotal">${L.rs(t.subtotal)}</span></div>${t.discount?`<div><span>Discount (${d.discount.kind}${d.discount.type==='pct'?' '+d.discount.value+'%':''})</span><span data-t="disc-amt">−${L.rs(t.discount)}</span></div>`:''}
+   <div class="cfoot"><div class="tot"><div><span>Subtotal</span><span data-t="subtotal">${L.rs(t.subtotal)}</span></div>${t.discount?`<div><span>Discount (${d.discount.kind}${d.discount.type==='pct'?' '+d.discount.value+'%':''})</span><span data-t="disc-amt">−${L.rs(t.discount)}</span></div>`:''}
     ${t.delivery?`<div><span>Delivery ${d.delivery.zone}</span><span data-t="deliv">${L.rs(t.delivery)}</span></div>`:''}${t.gst?`<div><span>GST</span><span>${L.rs(t.gst)}</span></div>`:''}
     <div class="grand"><span>Total${d.channel==='foodpanda'&&d.fp?.total!=null?' (FP)':''}</span><span data-t="total">${L.rs(t.total)}</span></div></div>
-   <div class="cbtns"><button class="btn ghost" id="disc" data-t="discount">Discount / staff / comp</button><button class="btn ghost" id="clear" data-t="clear">Clear</button><button class="btn primary big" id="checkout" data-t="checkout" ${d.lines.length?'':'disabled'}>Charge ${L.rs(t.total)}</button></div></aside></div>`;
+   <div class="cbtns"><button class="btn ghost" id="disc" data-t="discount">Discount / staff / comp</button><button class="btn ghost" id="clear" data-t="clear">Clear</button><button class="btn primary big" id="checkout" data-t="checkout" ${d.lines.length?'':'disabled'}>Charge ${L.rs(t.total)}</button></div></div></aside></div>`;
   $$('[data-ch]').forEach(b=>b.onclick=async()=>{ const k=b.dataset.ch; const prev=menuKey(d);
     if(k==='dine_in'||k==='takeaway'){ d.channel='instore'; d.type=k; d.delivery=null; d.fp=null; d.customer=null; } else { d.channel=k; d.type='delivery'; if(k!=='whatsapp'){d.delivery=null;d.customer=null;} if(k!=='foodpanda') d.fp=null; }
     if(menuKey(d)!==prev && d.lines.length){ d.lines=[]; toast('Cart cleared: different price list'); }
@@ -288,7 +292,7 @@ function copySpeedway(o){ if(!o) return; const txt=L.speedwayText(o,App.policy,A
   try{ if(navigator.clipboard&&window.isSecureContext) navigator.clipboard.writeText(txt).then(()=>toast('Copied for Speedway'),fallback); else fallback(); }catch(e){ fallback(); } }
 async function orderDetail(o){ const rec=P.build('receipt',o,App.settings).text.join('\n');
   const p=modal('Order #'+(o.orderNo??''),`<pre class="receipt-preview" data-t="receipt-preview">${esc(rec)}</pre><div class="row"><button type="button" class="btn primary" data-dact="reprint" data-t="d-reprint">Reprint receipt</button><button type="button" class="btn" data-dact="kreprint" data-t="d-kreprint">Reprint kitchen ticket</button>${L.isDelivery(o)?`<button type="button" class="btn" data-dact="speedway" data-t="d-speedway">Copy for Speedway</button>`:''}</div>`,{ok:'Close',cancel:''});
-  $$('[data-dact]').forEach(b=>b.onclick=()=>b.dataset.dact==='speedway'?copySpeedway(o):doReprint(o,b.dataset.dact)); await p; }
+  $$('[data-dact]').forEach(b=>b.onclick=()=>b.dataset.dact==='speedway'?copySpeedway(o):doReprint(o,b.dataset.dact)); await p; closeModal(); }
 const chLabel=o=>o.channel==='instore'?(o.type==='dine_in'?'Dine-in':'Takeaway'):o.channel==='whatsapp'?`WhatsApp ${o.delivery?.zone||''}`:o.channel==='foodpanda'?'Foodpanda':o.channel==='mashion'?'Mashion':o.channel==='website'?`Website${o.delivery?.zone?' '+o.delivery.zone:''}`:o.channel==='phone'?`Phone ${o.delivery?.zone||''}`:o.channel;
 async function orderAction(id,act){ const o=await db.get('orders',id); const t=L.computeTotals(o,App.policy);
   if(act==='detail') return orderDetail(o);
@@ -380,7 +384,8 @@ async function renderTill(){ const bd=L.businessDate(now()); const sh=await curr
 }
 // Settlements received on business date bd for orders from OTHER days + all-customer outstanding total
 async function duesCtx(bd,loc){ const all=await db.all('orders'); const settlements=[];
-  for(const o of all) if(o.businessDate!==bd) for(const p of o.payments||[]) if(p.settle&&p.bd===bd&&(p.loc||'main')===loc) settlements.push({...p,orderNo:o.orderNo,name:o.customer?.name});
+  for(const o of all) if(o.businessDate!==bd){ for(const p of L.custPayments(o)) if(p.settle&&p.bd===bd&&(p.loc||'main')===loc) settlements.push({...p,orderNo:o.orderNo,name:o.customer?.name});
+    if(o.rider?.settledAt&&o.rider.settledBd===bd&&(o.rider.settledLoc||o.location||'main')===loc&&o.rider.amount>0) settlements.push({method:o.rider.settledVia||'cash',amount:o.rider.amount,orderNo:o.orderNo,name:'Speedway rider',rider:true}); }
   return {settlements,outstanding:all.reduce((a,o)=>a+L.due(o,App.policy),0),speedwayOut:L.speedwayPending(all.filter(o=>(o.location||'main')===loc)).reduce((a,p)=>a+p.amount,0)}; }
 const duesHTML=r=>`<h3>Customer dues (Pay Later / COD)</h3><table class="tbl" data-t="r-dues"><tr><td>New unpaid today (NOT in drawer)</td><td data-t="r-newcredit">${L.rs(r.dues.newCredit)}</td></tr>${r.dues.creditOrders.map(c=>`<tr><td>&nbsp; #${esc(c.orderNo??'')} ${esc(c.name)} ${esc(c.phone)}</td><td>${L.rs(c.due)}</td></tr>`).join('')}<tr><td>Dues collected today</td><td data-t="r-collected">${L.rs(r.dues.collected)}</td></tr>${r.dues.collectedList.map(p=>`<tr><td>&nbsp; #${esc(p.orderNo??'')} ${esc(p.name||'')} via ${esc(PAYN(p.method))}</td><td>${L.rs(p.amount)}</td></tr>`).join('')}<tr><td><b>Total outstanding (all customers)</b></td><td data-t="r-outstanding"><b>${L.rs(r.dues.outstanding||0)}</b></td></tr></table>`;
 // ---------- Reports ----------
@@ -564,16 +569,14 @@ async function dispatchFlow(o){ const fare=L.riderFare(o,App.zones), collect=L.r
     ()=>true,{ok:'Dispatched ✓'});
   if(!r) return; const how=amt>0?r.how:'none'; const t=now();
   const s=await setFlow(o.id,'out_for_delivery',{remote:how==='none'?{}:{rider_settlement:RIDER_REMOTE[how],rider_amount_received:how==='later'?0:amt,rider_settled_at:how==='later'?null:new Date(t).toISOString()},
-    mutate:x=>{ x.payments=x.payments||[]; const base={at:t,by:App.user.id,rider:true,ref:'Speedway rider'};
-      if(how==='none'){ if(collect>0) x.payments.push({...base,method:'rider_fare',amount:collect}); }
-      else { x.payments.push({...base,method:how==='later'?'speedway_due':how,amount:amt}); if(collect>amt) x.payments.push({...base,method:'rider_fare',amount:collect-amt}); }
-      if(L.paid(x)>=L.computeTotals(x,App.policy).total) x.unpaid=false;
-      x.rider={method:how,collect,fare,amount:amt,at:t,by:App.user.name,settledAt:how==='later'?null:t,settledVia:how==='later'?null:how}; }});
+    mutate:x=>{ // rider settlement is its own record (x.rider), never a customer payment line
+      x.rider={method:how,collect,fare,amount:amt,at:t,by:App.user.name,settledAt:how==='later'?null:t,settledVia:how==='later'?null:how,settledBd:how==='later'?null:L.businessDate(t)};
+      if(L.paid(x)>=L.computeTotals(x,App.policy).total) x.unpaid=false; }});
   await logAct('rider-settlement',{order:o.orderNo,how,amount:amt}); toast(`#${o.orderNo} dispatched${how==='later'?' · Speedway owes '+L.rs(amt):''}`); refreshViews(); return s; }
 async function settleRider(id){ const o=await db.get('orders',id); if(!o?.rider||o.rider.settledAt) return;
   const r=await form('Speedway settles #'+o.orderNo,`<p>Amount: <b>${L.rs(o.rider.amount)}</b></p><fieldset>${[['cash','Cash received'],['hbl','HBL transfer'],['bah','Bank Al Habib transfer']].map(([k,n],i)=>`<label class="radio"><input type="radio" name="how" value="${k}" ${i?'':'checked'} data-t="rs-${k}"> ${n}</label>`).join('')}</fieldset>`,()=>true,{ok:'Mark settled'}); if(!r) return;
-  const t=now(); const p=(o.payments||[]).find(p=>p.method==='speedway_due'); if(p) Object.assign(p,{method:r.how,settle:true,bd:L.businessDate(t),loc:App.loc,at:t,by:App.user.id,ref:'Speedway settlement'});
-  o.rider={...o.rider,settledAt:t,settledVia:r.how,settledBy:App.user.name}; await db.put('orders',o); await logAct('rider-settle',{order:o.orderNo,how:r.how,amount:o.rider.amount});
+  const t=now();
+  o.rider={...o.rider,settledAt:t,settledVia:r.how,settledBy:App.user.name,settledBd:L.businessDate(t),settledLoc:App.loc}; await db.put('orders',o); await logAct('rider-settle',{order:o.orderNo,how:r.how,amount:o.rider.amount});
   if(o.web) await O.enqueue({kind:'patch',remoteId:o.web.id,orderNo:o.orderNo,body:{rider_settlement:RIDER_REMOTE[r.how],rider_amount_received:o.rider.amount,rider_settled_at:new Date(t).toISOString()}});
   toast('Speedway settlement recorded'); refreshViews(); }
 async function cancelFlow(id){ const o=await db.get('orders',id); if(!o) return;
@@ -593,7 +596,7 @@ async function verifyPayment(id){ const o=await db.get('orders',id); if(!o?.web)
 async function confirmBox(msg){ const r=await modal('Confirm',`<p>${esc(msg)}</p>`,{ok:'Yes'}); closeModal(); return !!r; }
 function refreshViews(){ if(App.view==='live') renderLive(); else if(App.view==='orders') renderOrders(); else if(App.view==='kds') renderKDS(); renderStatus(); }
 const tsLine=o=>Object.entries(o.flow?.ts||{}).sort((a,b)=>a[1]-b[1]).map(([k,v])=>`<span data-ts="${k}">${esc(L.flowLabel(o,k))} ${L.fmtTime(v)}</span>`).join(' · ');
-const payLine=o=>{ const d=L.due(o,App.policy); if(o.web&&o.web.payment_method!=='cod') return `Bank (${o.web.payment_method==='bank_hbl'?'HBL':'BAHL'}) ${o.web.verified?'<b class="good">verified</b>':'<b class="warn" data-t="unverified">NOT verified</b>'}${o.web.proof?' · proof uploaded':''}`; return d>0?`<b class="warn">COD ${L.rs(d)}</b>`:'Paid'; };
+const payLine=o=>{ const d=L.due(o,App.policy); if(o.web&&o.web.payment_method!=='cod') return `Bank (${o.web.payment_method==='bank_hbl'?'HBL':'BAHL'}) ${o.web.verified?'<b class="good">verified</b>':'<b class="warn" data-t="unverified">NOT verified</b>'}${o.web.proof?' · proof uploaded':''}`; const tot=o.totals?.total||0; if(d<=0) return '<b class="good">Paid in full</b>'; return d>=tot?`<b class="warn" data-t="cod">Cash on delivery: collect ${L.rs(d)}</b>`:`<b class="warn" data-t="cod">Balance to collect on delivery: ${L.rs(d)}</b> <span class="muted">(order ${L.rs(tot)}, ${L.rs(tot-d)} already paid/credited)</span>`; };
 async function liveOrders(){ const t=now(); return (await db.all('orders')).filter(o=>(o.location||'main')===App.loc&&(flowActive(o)||(!o.flow&&o.status==='open'))).sort((a,b)=>a.createdAt-b.createdAt).concat(
   (await db.all('orders')).filter(o=>(o.location||'main')===App.loc&&o.flow&&['delivered','cancelled'].includes(o.flow.status)&&t-(Math.max(...Object.values(o.flow.ts||{0:0})))<3*3600e3).sort((a,b)=>b.createdAt-a.createdAt)); }
 async function renderLive(){ if(App.view!=='live'||!$('#main')) return; const os=await liveOrders(); const st=O.state(); const all=await db.all('orders'); const pend=L.speedwayPending(all);

@@ -184,7 +184,12 @@ const startHelper=()=>new Promise(r=>{ helper=spawn('node',['print-helper/server
 test('Printing','Laptop: receipt + kitchen ticket printed via helper (ESC/POS bytes), no recipe', async()=>{ await startHelper(); try{ const p=await owner(); await H.add(p,'combo1',{heat:'Hot'}); await H.pay(p,{cash:1099}); await H.sleep(p,1500);
   const bins=fs.readdirSync(outDir).filter(f=>f.endsWith('.bin')); ok(bins.length>=2,'bins '+bins.length); const buf=fs.readFileSync(path.join(outDir,bins[0])); ok(buf[0]===0x1b&&buf[1]===0x40,'ESC @'); const txt=fs.readdirSync(outDir).filter(f=>f.endsWith('.txt')).map(f=>fs.readFileSync(path.join(outDir,f),'utf8')).join(); ok(txt.includes('1606')&&txt.includes('Combo 1'),'content');
   await H.go(p,'orders'); ok(await ev(p,()=>__pos.P.checkHelper()),'helper alive'); await H.orderRowAct(p,1606,'reprint'); await H.sleep(p,1000); ok(fs.readdirSync(outDir).filter(f=>f.endsWith('.bin')).length>bins.length,'reprint'); await p.ctx.close(); } finally{ helper.kill(); } });
-test('Printing','Printer offline: sale not blocked, job queued, retry prints later', async()=>{ const p=await owner(); await H.add(p,'baja'); eq(await H.pay(p,{cash:199}),{ok:true}); await H.sleep(p,800); ok(await p.$('[data-t=print-pending]'),'no pending indicator'); const before=fs.readdirSync(outDir).length;
+test('Printing','No helper: browser print fallback is ON by default (receipt + kitchen in one dialog)', async()=>{ const p=await owner(); await p.evaluate(()=>{ window.__printCalls=0; window.print=()=>{ window.__printCalls++; window.__pages=[...document.querySelectorAll('#printarea .pticket')].map(d=>d.textContent); }; });
+  await p.evaluate(async()=>{ const c=await __pos.db.kvGet('print',{}); delete c.fallback; c.helper='http://127.0.0.1:9'; await __pos.db.kvSet('print',c); await __pos.P.checkHelper(); });
+  await H.add(p,'baja'); eq(await H.pay(p,{cash:199}),{ok:true}); await H.sleep(p,1200);
+  const r=await p.evaluate(()=>({n:window.__printCalls,pages:window.__pages||[]})); eq(r.n,1); ok(r.pages.length>=2,'expected kitchen+receipt pages, got '+r.pages.length);
+  await H.go(p,'settings'); await p.click('[data-tab=print]').catch(()=>{}); await H.sleep(p,300); ok(await p.isChecked('[data-t=print-fallback]'),'toggle not on by default'); });
+test('Printing','Printer offline: sale not blocked, job queued, retry prints later', async()=>{ const p=await owner(); await p.evaluate(async()=>{ const c=await __pos.db.kvGet('print',{}); await __pos.db.kvSet('print',{...c,fallback:false}); }); await H.add(p,'baja'); eq(await H.pay(p,{cash:199}),{ok:true}); await H.sleep(p,800); ok(await p.$('[data-t=print-pending]'),'no pending indicator'); const before=fs.readdirSync(outDir).length;
   await startHelper(); try{ await p.click('[data-t=print-retry]'); await H.sleep(p,1500); eq((await ev(p,()=>__pos.P.pending())).length,0); ok(fs.readdirSync(outDir).length>before,'not printed after retry'); } finally{ helper.kill(); } await p.ctx.close(); });
 test('Printing','iPad: printing hidden, no print jobs', async()=>{ const p=await owner({ipad:true,viewport:{width:1024,height:768}}); await H.add(p,'baja'); await H.pay(p,{cash:199}); eq((await ev(p,()=>__pos.db.all('printJobs'))).length,0); ok(await ev(p,()=>document.body.classList.contains('noprint')),'noprint'); await p.ctx.close(); });
 test('Printing','iPad: Reprint receipt/kitchen on order row and detail use browser print dialog', async()=>{ const p=await owner({ipad:true,viewport:{width:1024,height:768}}); await H.add(p,'baja'); await H.pay(p,{cash:199});
@@ -195,6 +200,19 @@ test('Printing','iPad: Reprint receipt/kitchen on order row and detail use brows
   await p.click('[data-t=odetail]'); await H.sleep(p,300); ok(await p.isVisible('[data-t=receipt-preview]'),'detail preview');
   await p.click('[data-t=d-kreprint]'); await H.sleep(p,300); eq(await ev(p,()=>window.__prints),3); ok(await p.isVisible('[data-t=receipt-preview]'),'modal stays open');
   eq((await ev(p,()=>__pos.db.all('printJobs'))).length,0); await p.ctx.close(); });
+test('Modals','Order detail closes via Close, ✕, Esc and click-outside; confirm modal too', async()=>{ const p=await owner(); await H.add(p,'baja'); await H.pay(p,{cash:199}); await H.go(p,'orders');
+  for(const how of ['ok','x','esc','bg']){ await p.click('[data-t=odetail]'); await H.sleep(p,250); ok(await p.isVisible('[data-t=receipt-preview]'),'open '+how);
+    if(how==='ok') await p.click('[data-t=modal-ok]'); else if(how==='x') await p.click('[data-t=modal-close]'); else if(how==='esc') await p.keyboard.press('Escape'); else await p.mouse.click(5,5);
+    await H.sleep(p,250); ok(!(await p.$('.modal-bg')),'still open after '+how); }
+  await p.ctx.close(); });
+test('Payments','Rider COD: one clean payment line; #1607 bad data repaired on load', async()=>{ const p=await owner();
+  await ev(p,async()=>{ const o=(await __pos.db.all('orders'))[0]||null; const t=Date.now()-60000; const lines=[{itemId:'combo1',name:'Combo 1',qty:2,unitPrice:1099,addons:[]}];
+    await __pos.db.put('orders',{id:'t1607',orderNo:1607,channel:'whatsapp',type:'delivery',status:'done',location:'main',createdAt:t,businessDate:__pos.L?__pos.L.businessDate(t):undefined,lines,delivery:{zone:'',charge:320},
+      payments:[{method:'cash',amount:2518,at:t+5000},{method:'cash',amount:2100,rider:true,at:t,ref:'Speedway rider'},{method:'rider_fare',amount:58,rider:true,at:t,ref:'Speedway rider'}],
+      rider:{method:'cash',collect:2158,fare:58,amount:2100,at:t,settledAt:t,settledVia:'cash'}}); });
+  await p.reload(); await H.sleep(p,1200);
+  const o=await ev(p,()=>__pos.db.get('orders','t1607')); ok(!o.payments.some(x=>x.rider||x.method==='rider_fare'),'rider lines left on payments: '+JSON.stringify(o.payments));
+  const logs=await ev(p,()=>__pos.db.all('log')); ok(logs.some(l=>l.action==='repair-rider-payments'),'repair not logged'); await p.ctx.close(); });
 test('Printing','Laptop without helper: reprint falls back to browser print', async()=>{ const p=await owner(); await H.add(p,'baja'); await H.pay(p,{cash:199});
   await ev(p,async()=>{ const pr=await __pos.db.kvGet('print',{}); await __pos.db.kvSet('print',{...pr,mode:'on',helper:'http://127.0.0.1:9'}); window.__prints=0; window.print=()=>window.__prints++; });
   await H.go(p,'orders'); eq(await ev(p,()=>__pos.P.checkHelper()),false); await p.click('[data-t=reprint]'); await H.sleep(p,300); eq(await ev(p,()=>window.__prints),1); await p.ctx.close(); });
