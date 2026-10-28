@@ -31,7 +31,7 @@ const fp={flow:{kind:'pickup',status:'ready'}}; assert.equal(L.nextStatus(fp),'d
 assert.equal(L.nextStatus({flow:{kind:'delivery',status:'delivered'}}),null);
 for(const [z,f] of Object.entries({A:200,B:300,C:360,D:460,E:560,F:660,G:760,H:860,I:960})) assert.equal(L.SPEEDWAY_FARES[z],f);
 const cod={channel:'website',type:'delivery',lines:[{itemId:'combo1',qty:1,unitPrice:1099,addons:[]}],delivery:{zone:'C',charge:200},web:{total:1299},payments:[]};
-assert.equal(L.riderCollect(cod,{}),1299); assert.equal(L.riderAmount(cod,{},[]),1299-360);
+assert.equal(L.riderCollect(cod,{}),1299); assert.equal(L.riderAmount(cod,{},[]),1299-200); // total minus delivery charge (goes to Speedway)
 const pre={...cod,payments:[{method:'hbl',amount:1299}]}; assert.equal(L.riderCollect(pre,{}),0); assert.equal(L.riderAmount(pre,{},[]),0);
 const w={id:'u1',website_ref:'MHC-1',order_type:'delivery',status:'received',status_timestamps:{received:'2026-10-28T10:00:00Z'},created_at:'2026-10-28T10:00:00Z',customer:{name:'A',phone:'03001234567',zone:'A'},items:[{item_id:'combo_1',name:'Combo 1',qty:1,unit_price:1099,modifiers:[{item_id:'addon_hot_honey',name:'Hot Honey',price:100}]}],delivery_fee:200,total:1399,payment_method:'cod'};
 const m=L.webOrderToPos(w,{webToPos:S.WEB_ITEM_MAP,zones:[]}); assert.equal(m.id,'web-u1'); assert.equal(m.lines[0].itemId,'combo1'); assert.equal(m.lines[0].addons[0].id,'hot_honey'); assert.equal(m.unpaid,true); assert.equal(m.delivery.riderFare,200); assert.equal(m.flow.status,'received');
@@ -45,13 +45,17 @@ assert.equal(L.speedwayPending([{status:'done',rider:{method:'later',amount:500,
   const ok={...base,payments:[],rider:r}; assert.equal(L.paid(ok),2518); assert.equal(L.due(ok,{}),0);
   const later={...base,payments:[],rider:{...r,method:'later',settledAt:null,settledVia:null,settledBd:null}};
   assert.deepEqual(L.riderEntries(later),[{method:'speedway_due',amount:2158},{method:'rider_fare',amount:360}]);
-  // #1607-style bad data: counter cash 2518 + rider lines cash 2100 + rider_fare 58
-  const bad={...base,id:'x1607',orderNo:1607,change:0,payments:[{method:'cash',amount:2518,at:200},{method:'cash',amount:2100,rider:true,at:100},{method:'rider_fare',amount:58,rider:true,at:100}],rider:{...r,collect:2158,fare:58,amount:2100}};
-  const note=L.repairRiderPayments(bad,{}); assert.ok(note); assert.equal(L.paid(bad),2518); assert.equal(L.due(bad,{}),0);
-  assert.ok(!bad.payments.some(L.isRiderPay)); assert.equal(L.repairRiderPayments(bad,{}),null);
-  // #1606-style: rider lines only, counter payment recorded after dispatch duplicating the rider cash
-  const b2={...base,id:'x1606',orderNo:1606,payments:[{method:'cash',amount:2158,rider:true,at:100},{method:'rider_fare',amount:360,rider:true,at:100},{method:'cash',amount:2518,at:300}],rider:{...r}};
-  L.repairRiderPayments(b2,{}); assert.equal(L.paid(b2),2518); assert.equal(b2.payments.length+(b2.rider.collect?1:0),1);
-  const rep=L.shiftReport({orders:[b2,ok]}); assert.equal(rep.byPay.cash.amount, 2158*2, 'no double count'); assert.equal(rep.byPay.rider_fare.amount, 720);
+  // real #1607 as stored: counter cash 2100 + old rider lines; total 2518, delivery 360
+  const bad={...base,id:'x1607',orderNo:1607,delivery:{zone:'C',charge:360,riderFare:360},change:0,payments:[{method:'cash',amount:2100,at:50},{method:'cash',amount:58,rider:true,at:100},{method:'rider_fare',amount:360,rider:true,at:100}],rider:{method:'cash',collect:418,fare:360,amount:58,at:100,settledAt:100,settledVia:'cash'}};
+  const note=L.repairRiderPayments(bad,{}); assert.ok(/removed counter cash 2100/.test(note),note); assert.equal(bad.payments.length,0);
+  assert.equal(bad.rider.collect,2518); assert.equal(bad.rider.amount,2158); assert.equal(L.paid(bad),2518); assert.equal(L.due(bad,{}),0);
+  assert.equal(L.riderPaysText(bad,{}),'Collect from rider: Rs 2158'); assert.equal(L.repairRiderPayments(bad,{}),null);
+  const rep=L.shiftReport({orders:[bad]}); assert.equal(rep.byPay.cash.amount,2158); assert.equal(rep.byPay.rider_fare.amount,360);
+  assert.equal(rep.byChannel.whatsapp.gross,2518-360); assert.equal(rep.deliveryToSpeedway,360);
+  assert.equal(L.riderAmount({...base,payments:[]},{},[]),2518-360);
+  { const x={...bad,rider:{...bad.rider,speedwayFare:400}}; const rr=L.shiftReport({orders:[x]}); assert.equal(rr.speedwayDiffTotal,40); assert.equal(rr.speedwayDiff[0].name,'Speedway delivery difference');
+    assert.equal(rr.profitAfterDelivery,2158-40); assert.equal(rr.byPay.cash.amount,2158,'drawer untouched');
+    const g=L.shiftReport({orders:[{...bad,rider:{...bad.rider,speedwayFare:300}}]}); assert.equal(g.speedwayDiffTotal,-60,'gain'); }
+  assert.ok(L.speedwayText({...base,payments:[]},{},[]).includes("Rider hands over to Moe's: Rs 2158"));
 }
 console.log('ALL LOGIC TESTS PASSED');

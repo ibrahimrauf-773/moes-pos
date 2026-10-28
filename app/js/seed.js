@@ -139,4 +139,4 @@ export const ONLINE_DEFAULT={url:'https://qviqafndnhwpwnaqhfya.supabase.co',anon
 export const WEB_ITEM_MAP={combo_1:'combo1',combo_2:'combo2',combo_3:'combo3',loaded_fries:'loaded_fries',mozzarella_sticks_3:'mozz',mac_n_cheese:'mac',
   addon_dinner_roll:'dinner_roll',addon_extra_sauce:'moes_sauce',addon_hot_honey:'hot_honey',drink_baja_blast:'baja',drink_lemonade:'lemonade',drink_arizona_iced_tea:'arizona',dessert_glazed_donut:'donut'};
 export const POS_TO_WEB=Object.fromEntries(Object.entries(WEB_ITEM_MAP).map(([w,p])=>[p,w]));
-export const EXTRA_PAY_NAMES={rider_fare:'Rider fare (kept by Speedway)',speedway_due:'Speedway owes (pays later)',pay_later:'Pay Later'};
+export const EXTRA_PAY_NAMES={rider_fare:'Delivery charge (passed to Speedway)',speedway_due:'Speedway owes (pays later)',pay_later:'Pay Later'};

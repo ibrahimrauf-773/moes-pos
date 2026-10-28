@@ -38,7 +38,7 @@ test('Website delivery (COD): alert until Accept → Preparing → Waiting for r
   const card=()=>p.$(`[data-t=lcard][data-lo="web-${w.id}"]`)||p.$('[data-t=lcard]');
   for(const want of ['preparing','ready']){ await p.click('[data-t=next]'); await H.sleep(p,300); eq((await H.lastOrder(p)).flow.status,want); }
   await p.screenshot({path:SHOTS+'flow-live-waiting-rider.png'});
-  await p.click('[data-t=next]'); await H.sleep(p,300); eq((await p.textContent('[data-t=rider-collect]')).replace(/\D/g,''),'1299'); eq((await p.textContent('[data-t=rider-fare]')).replace(/\D/g,''),'200'); eq((await p.textContent('[data-t=rider-amount]')).replace(/\D/g,''),'1099');
+  await p.click('[data-t=next]'); await H.sleep(p,300); ok(!(await p.$('[data-t=rider-fare]')),'delivery shown on collect step'); eq((await p.textContent('[data-t=rider-amount]')).replace(/\D/g,''),'1099');
   await p.screenshot({path:SHOTS+'flow-dispatch-dialog.png'}); await p.check('[data-t=rider-cash]'); await H.modalOk(p);
   let o=await H.lastOrder(p); eq(o.flow.status,'out_for_delivery'); eq(o.rider.method,'cash'); eq(o.unpaid,false);
   await p.click('[data-t=next]'); await H.sleep(p,300); o=await H.lastOrder(p); eq(o.flow.status,'delivered'); ok(['accepted','preparing','ready','out_for_delivery','delivered'].every(k=>o.flow.ts[k]),'missing timestamps');
@@ -48,13 +48,13 @@ test('Website delivery (COD): alert until Accept → Preparing → Waiting for r
 
 test('Rider pays later: not drawer cash; receivables list; till card; settle via HBL', async()=>{ M.orders.clear(); M.patches=[]; const w=mkOrder(2,{zone:'C'}); w.status='ready'; M.orders.set(w.id,w);
   const p=await H.newPage(b); await H.login(p,'waqar','4444'); await connect(p); await flush(p); await H.go(p,'live');
-  await p.click('[data-t=next]'); await H.sleep(p,300); eq((await p.textContent('[data-t=rider-amount]')).replace(/\D/g,''),'939'); await p.check('[data-t=rider-later]'); await H.modalOk(p);
-  await H.go(p,'live'); ok((await p.textContent('[data-t=rcv-total]')).includes('939'),'receivable'); await p.screenshot({path:SHOTS+'flow-receivables.png'});
-  await H.go(p,'till'); ok((await p.textContent('[data-t=till-sw-out]')).includes('939'),'till outstanding'); ok((await p.textContent('[data-t=till-sw-pending]')).includes('939'),'till tonight');
+  await p.click('[data-t=next]'); await H.sleep(p,300); eq((await p.textContent('[data-t=rider-amount]')).replace(/\D/g,''),'1099'); await p.check('[data-t=rider-later]'); await H.modalOk(p);
+  await H.go(p,'live'); ok((await p.textContent('[data-t=rcv-total]')).replace(/,/g,'').includes('1099'),'receivable'); await p.screenshot({path:SHOTS+'flow-receivables.png'});
+  await H.go(p,'till'); ok((await p.textContent('[data-t=till-sw-out]')).replace(/,/g,'').includes('1099'),'till outstanding'); ok((await p.textContent('[data-t=till-sw-pending]')).replace(/,/g,'').includes('1099'),'till tonight');
   await flush(p); eq(M.orders.get(w.id).rider_settlement,'pending_later');
   await H.go(p,'live'); await p.click('[data-t=rider-settle]'); await H.sleep(p); await p.check('[data-t=rs-hbl]'); await H.modalOk(p);
   const o=await H.lastOrder(p); ok(o.rider.settledAt&&o.rider.settledVia==='hbl'&&!o.payments.some(x=>x.rider),'settled');
-  await flush(p); eq(M.orders.get(w.id).rider_settlement,'transfer'); eq(M.orders.get(w.id).rider_amount_received,939);
+  await flush(p); eq(M.orders.get(w.id).rider_settlement,'transfer'); eq(M.orders.get(w.id).rider_amount_received,1099);
   await H.go(p,'till'); ok((await p.textContent('[data-t=till-sw-out]')).includes('0'),'outstanding cleared'); await p.ctx.close(); });
 
 test('Prepaid bank order: verify; rider owes 0; pickup flow ends Picked up', async()=>{ M.orders.clear(); const w=mkOrder(3,{pay:'bank_hbl'}); const pk=mkOrder(4,{type:'pickup'}); pk.status='accepted'; M.orders.set(w.id,w); M.orders.set(pk.id,pk);

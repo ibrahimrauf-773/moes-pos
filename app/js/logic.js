@@ -38,18 +38,24 @@ export function riderEntries(o){ const r=o.rider; if(!r) return []; const out=[]
   if((r.collect||0)>amt) out.push({method:'rider_fare',amount:r.collect-amt}); return out; }
 // One-time repair for orders saved by the old dispatch code (rider settlement stored as payments, sometimes on top of a
 // counter payment for the same money). Returns a description of the change, or null.
-export function repairRiderPayments(o,policy={}){ if(!o?.rider&&!(o?.payments||[]).some(isRiderPay)) return null;
-  const old=o.payments||[]; const riderPs=old.filter(isRiderPay); let keep=old.filter(p=>!isRiderPay(p)); const notes=[];
-  if(riderPs.length) notes.push('moved '+riderPs.length+' rider settlement line(s) off the payments');
-  if(o.rider){ const conv=riderPs.find(p=>p.ref==='Speedway settlement'); if(conv&&!o.rider.settledBd) o.rider.settledBd=conv.bd||null;
-    const total=computeTotals(o,policy).total; let excess=keep.reduce((a,p)=>a+(p.amount||0),0)+(o.rider.collect||0)-total;
-    if(excess>0){ // the customer paid once: drop counter payments recorded at/after dispatch for the money the rider brought back
-      const later=keep.filter(p=>!p.settle&&!['hbl','bah'].includes(p.method)&&(p.at||0)>=(o.rider.at||0)).sort((a,b)=>b.at-a.at);
-      for(const p of later){ if(excess<=0) break; if((p.amount||0)>excess) continue; keep=keep.filter(x=>x!==p); excess-=p.amount||0; notes.push('removed duplicate '+p.method+' '+p.amount); }
-      if(excess>0){ o.rider.collect=Math.max(0,(o.rider.collect||0)-excess); notes.push('rider collect reduced by '+excess); }
-    }
-    o.rider.amount=Math.max(0,Math.min(o.rider.amount||0,o.rider.collect||0)); }
-  if(!notes.length) return null; o.payments=keep; if(o.change&&!keep.some(p=>p.method==='cash')) o.change=0; return notes.join('; '); }
+// Speedway money flow: rider collects the order total from the customer and pays us total minus the delivery charge;
+// the delivery charge goes to Speedway (not our income, not drawer cash).
+export function riderPaysText(o,policy={}){ const t=computeTotals(o,policy); const r=o.rider; const d=t.delivery||0;
+  const collect=r?r.collect:riderCollect(o,policy); const x=r?r.amount:Math.max(0,collect-d);
+  return `Collect from rider: Rs ${x}`; }
+// Repair orders saved by older code: rider settlement stored as payments, counter cash entered for money that actually
+// came through the rider, or settlement not equal to total minus delivery. Idempotent (rider.v=2). Returns a note or null.
+export function repairRiderPayments(o,policy={}){ if(!o) return null; const old=o.payments||[];
+  if(!o.rider){ if(!old.some(isRiderPay)) return null; o.payments=old.filter(p=>!isRiderPay(p)); return 'moved rider lines off the payments'; }
+  if(o.rider.v===2) return null;
+  const t=computeTotals(o,policy); const notes=[]; let keep=old.filter(p=>!isRiderPay(p));
+  if(keep.length!==old.length) notes.push('moved '+(old.length-keep.length)+' rider settlement line(s) off the payments');
+  if(o.rider.method!=='none'){ const mis=keep.filter(p=>p.method==='cash'&&!p.settle); // paid through the rider, so counter cash is a mis-entry
+    for(const p of mis) notes.push('removed counter cash '+p.amount+' (paid through rider)'); keep=keep.filter(p=>!mis.includes(p)); }
+  const pre=keep.reduce((a,p)=>a+(p.amount||0),0); const collect=Math.max(0,t.total-pre), amount=Math.max(0,collect-(t.delivery||0));
+  if(collect!==o.rider.collect||amount!==o.rider.amount) notes.push(`rider settlement ${o.rider.amount} -> ${amount} (total ${t.total} minus delivery ${t.delivery||0})`);
+  o.rider={...o.rider,collect,amount,fare:t.delivery||0,v:2}; o.payments=keep; if(o.change&&!keep.some(p=>p.method==='cash')) o.change=0;
+  return notes.length?notes.join('; '):null; }
 export const refunded=o=>(o.refunds||[]).reduce((a,r)=>a+(r.amount||0),0);
 export const isCounted=o=>o.status!=='void' && o.status!=='cancelled';
 // Outstanding (Pay Later / COD) amount on an order. Unpaid money is never cash in the drawer.
@@ -103,7 +109,8 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
   const r={byChannel:{},byPay:{},items:{},adjustments:[],deliveryByZone:{},expenses:[],foc:[],fp:{orders:0,gross:0,commissionPct:policy.fpCommissionPct??23,commissionEst:0,payoutEst:0},samples:{}};
   const ch=k=>r.byChannel[k]??={orders:0,gross:0};
   for(const o of counted){
-    const t=computeTotals(o,policy); const c=ch(o.channel); c.orders++; c.gross+=t.total;
+    const t=computeTotals(o,policy); const c=ch(o.channel); c.orders++; c.gross+=t.total-(t.delivery||0); r.deliveryToSpeedway=(r.deliveryToSpeedway||0)+(t.delivery||0);
+    if(o.rider&&o.rider.speedwayFare!=null&&o.rider.speedwayFare!==(t.delivery||0)){ const diff=o.rider.speedwayFare-(t.delivery||0); (r.speedwayDiff??=[]).push({orderNo:o.orderNo,charged:t.delivery||0,fare:o.rider.speedwayFare,diff,name:'Speedway delivery difference'}); r.speedwayDiffTotal=(r.speedwayDiffTotal||0)+diff; }
     if(o.channel==='foodpanda'){ r.fp.orders++; r.fp.gross+=t.total; }
     for(const p of [...custPayments(o),...riderEntries(o)]){ if((p.settle||p.bd)&&p.bd&&p.bd!==o.businessDate) continue; (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; }
     if(!custPayments(o).length && o.channel==='foodpanda'){ (r.byPay.fp_online??={count:0,amount:0}); r.byPay.fp_online.count++; r.byPay.fp_online.amount+=t.total; }
@@ -122,6 +129,7 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
       z.orders++; z.charged+=o.delivery.charge||0; z.riderFare+=o.delivery.riderFare||0; z.diff=z.charged-z.riderFare; }
   }
   for(const o of orders.filter(o=>!isCounted(o))) r.adjustments.push({orderNo:o.orderNo,type:o.status,amount:computeTotals(o,policy).total,reason:o.voidReason||'',by:o.voidBy||''});
+  r.salesItems=Object.values(r.byChannel).reduce((a,c)=>a+c.gross,0); r.speedwayDiffTotal=r.speedwayDiffTotal||0; r.profitAfterDelivery=r.salesItems-r.speedwayDiffTotal;
   r.dues={newCredit:counted.reduce((a,o)=>a+due(o,policy),0),creditOrders:counted.filter(o=>due(o,policy)>0).map(o=>({orderNo:o.orderNo,name:o.customer?.name||'',phone:o.customer?.phone||'',due:due(o,policy)})),collected:0,collectedList:[],outstanding};
   for(const p of settlements){ (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount; r.dues.collected+=p.amount; r.dues.collectedList.push(p); }
   for(const o of counted) for(const p of custPayments(o)) if(p.settle&&p.bd===o.businessDate){ r.dues.collected+=p.amount; r.dues.collectedList.push({...p,orderNo:o.orderNo,name:o.customer?.name}); }
@@ -158,6 +166,7 @@ export function reportCSV(r, meta={}){
   for(const a of r.adjustments) rows.push(['Adjustment:'+a.type,'#'+(a.orderNo??''),'',a.amount,`${a.reason||''} (by ${a.by||'?'})`]);
   for(const [z,v] of Object.entries(r.deliveryByZone)) rows.push(['Delivery zone '+z,'charged / rider fare / diff',v.orders,v.charged,`rider ${v.riderFare}; diff ${v.diff}`]);
   for(const e of r.expenses) rows.push(['Till expense',e.code+' '+(e.codeName||''),'',e.amount,e.note||'']);
+  for(const d of r.speedwayDiff||[]) rows.push(['Delivery expense','Speedway delivery difference #'+d.orderNo,'',d.diff,'billed '+d.charged+', Speedway '+d.fare+' (not from drawer)']);
   rows.push(['Foodpanda','orders/gross',r.fp.orders,r.fp.gross],['Foodpanda','commission est '+r.fp.commissionPct+'%','',r.fp.commissionEst],['Foodpanda','payout est','',r.fp.payoutEst],['Foodpanda','actual payout / batch','',r.fp.actualPayout??'',r.fp.payoutBatch||'']);
   if(r.dues){ rows.push(['Dues','new unpaid / Pay Later today (not cash)',r.dues.creditOrders.length,r.dues.newCredit]); for(const c of r.dues.creditOrders) rows.push(['Dues: unpaid order','#'+(c.orderNo??''),'',c.due,`${c.name} ${c.phone}`]);
     rows.push(['Dues','collected today (settlements)',r.dues.collectedList.length,r.dues.collected]); if(r.dues.outstanding!=null) rows.push(['Dues','total outstanding (all customers)','',r.dues.outstanding]); }
@@ -228,7 +237,7 @@ export function speedwayText(o,policy,zones=[]){ const t=computeTotals(o,policy)
   const extra=[c.landmark&&('Landmark: '+c.landmark)].filter(Boolean).join(' | ');
   return [`Customer name: ${c.name||'-'}`,`Contact number: ${c.phone||'-'}`,`Address: ${addr||'-'}${extra?' | '+extra:''}`,
    `Area/Zone: ${z?z.name+(z.areas?' ('+String(z.areas).split(',')[0].trim()+')':''):(o.delivery?.zone||'-')}`,`Order #: ${o.orderNo??'-'}`,
-   `Amount to collect: Rs ${collect}`,`Payment: ${collect>0?'COD':'Paid'}`,`Notes: ${String(o.note||'').replace(/\s+/g,' ').trim()||'-'}`].join('\n'); }
+   `Customer pays (COD): Rs ${collect}`,`Rider hands over to Moe's: Rs ${Math.max(0,collect-(t.delivery||0))}`,`Payment: ${collect>0?'COD':'Paid'}`,`Notes: ${String(o.note||'').replace(/\s+/g,' ').trim()||'-'}`].join('\n'); }
 export const isDelivery=o=>!!(o.delivery||o.channel==='whatsapp'||o.channel==='website'||o.channel==='phone'||o.type==='delivery');
 
 // ---------- Order status workflow (delivery: website / WhatsApp / phone; pickup: website pickup) ----------
@@ -248,7 +257,7 @@ export const riderFare=(o,zones=[])=>{ const z=zones.find(z=>z.id===o.delivery?.
 // What the rider collects from the customer: unpaid balance (COD). Prepaid by bank -> 0.
 export function riderCollect(o,policy={}){ return due(o,policy); }
 // What the rider owes the shop at dispatch: collected minus his fare (never below 0).
-export function riderAmount(o,policy={},zones=[]){ const c=riderCollect(o,policy); return c>0?Math.max(0,c-riderFare(o,zones)):0; }
+export function riderAmount(o,policy={},zones=[]){ const c=riderCollect(o,policy); return c>0?Math.max(0,c-(computeTotals(o,policy).delivery||0)):0; }
 // Speedway receivables: dispatched orders where the rider 'pays later' and hasn't settled.
 export const speedwayPending=orders=>orders.filter(o=>isCounted(o)&&o.rider?.method==='later'&&!o.rider.settledAt).map(o=>({id:o.id,orderNo:o.orderNo,businessDate:o.businessDate,zone:o.delivery?.zone,amount:o.rider.amount,at:o.rider.at}));
 // Customer WhatsApp messages (copy fallback while automation is down)
