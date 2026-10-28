@@ -193,3 +193,14 @@ export function dashboard(orders,policy={}){ const c=orders.filter(isCounted); c
     for(const l of o.lines||[]){ const it=items[l.name]??={name:l.name,units:0,amount:0}; it.units+=l.qty||1; it.amount+=lineTotal(l); } }
   const gross=c.reduce((a,o)=>a+tot(o),0);
   return {orders:c.length,gross,aov:c.length?Math.round(gross/c.length):0,hourly,top:Object.values(items).sort((a,b)=>b.units-a.units).slice(0,10),pay,ch}; }
+
+// Plain text for the Speedway WhatsApp group (one field per line).
+export function speedwayText(o,policy,zones=[]){ const t=computeTotals(o,policy); const c=o.customer||{};
+  const pre=(o.payments||[]).filter(p=>p.method&&!/^(cash|pay_later)$/.test(p.method)&&!p.settle).reduce((a,p)=>a+(p.amount||0),0);
+  const collect=Math.max(0,Math.round(t.total-pre)); const z=zones.find(x=>x.id===o.delivery?.zone);
+  const addr=String(c.address||'').trim();
+  const extra=[c.landmark&&('Landmark: '+c.landmark)].filter(Boolean).join(' | ');
+  return [`Customer name: ${c.name||'-'}`,`Contact number: ${c.phone||'-'}`,`Address: ${addr||'-'}${extra?' | '+extra:''}`,
+   `Area/Zone: ${z?z.name+(z.areas?' ('+String(z.areas).split(',')[0].trim()+')':''):(o.delivery?.zone||'-')}`,`Order #: ${o.orderNo??'-'}`,
+   `Amount to collect: Rs ${collect}`,`Payment: ${collect>0?'COD':'Paid'}`,`Notes: ${String(o.note||'').replace(/\s+/g,' ').trim()||'-'}`].join('\n'); }
+export const isDelivery=o=>!!(o.delivery||o.channel==='whatsapp'||o.channel==='website'||o.channel==='phone'||o.type==='delivery');
