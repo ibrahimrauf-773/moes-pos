@@ -8,7 +8,7 @@ export const on=(k,f)=>{ L[k]=f; };
 const emit=()=>{ try{ L.onStatus?.(state()); }catch(e){} };
 export async function config(){ return cfg??=await db.kvGet('online',{...ONLINE_DEFAULT,connected:false}); }
 async function save(){ await db.kvSet('online',cfg); }
-export function state(){ return {connected:!!cfg?.connected,lastPull:cfg?.lastPull||null,lastError:cfg?.lastError||null,realtime:!!cfg?._rt,queue:cfg?._q||0,failed:cfg?._f||0,email:cfg?.email}; }
+export function state(){ return {url:cfg?.url||'',connected:!!cfg?.connected,lastPull:cfg?.lastPull||null,lastError:cfg?.lastError||null,realtime:!!cfg?._rt,queue:cfg?._q||0,failed:cfg?._f||0,email:cfg?.email}; }
 function setTok(j){ cfg.access=j.access_token; cfg.refresh=j.refresh_token; cfg.exp=Date.now()+((j.expires_in||3600)-120)*1000; }
 export async function connect(password,{url,anonKey,email}={}){ await config(); if(url) cfg.url=url.replace(/\/+$/,''); if(anonKey) cfg.anonKey=anonKey; if(email) cfg.email=email;
   const r=await fetch(cfg.url+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:cfg.anonKey,'Content-Type':'application/json'},body:JSON.stringify({email:cfg.email,password})});

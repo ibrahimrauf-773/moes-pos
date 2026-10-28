@@ -70,7 +70,7 @@ test('Discounts','Discounts appear in report adjustments', async()=>{ const p=aw
 test('Void/Refund','Cashier void needs owner PIN + reason; stock returned', async()=>{ const p=await cashier(); await H.add(p,'baja'); await H.pay(p,{cash:199}); const o=await H.lastOrder(p); const before=await ev(p,()=>__pos.onHand());
   await H.orderRowAct(p,o.orderNo,'void'); await H.ownerPin(p,'3333'); await H.modalOk(p); ok(/Reason/.test(await p.textContent('[data-t=modal-err]')),'void without reason'); await p.fill('[data-t=vreason]','customer cancelled'); await H.modalOk(p);
   const v=await H.lastOrder(p); eq([v.status,v.voidBy],['void','Ruqaiya']); const after=await ev(p,()=>__pos.onHand()); ok(Object.values(after).every(x=>Math.abs(x)<1e-9)||JSON.stringify(after)!==JSON.stringify(before),'stock not returned'); await p.ctx.close(); });
-test('Void/Refund','Cashier can refund partial with reason; over-refund blocked', async()=>{ const p=await cashier(); await H.add(p,'lemonade'); await H.pay(p,{cash:199}); const o=await H.lastOrder(p); await H.orderRowAct(p,o.orderNo,'refund'); ok(!(await p.$('[data-t=owner-pin]')),'cashier refund asked owner');
+test('Void/Refund','Cashier refund needs owner PIN + reason; over-refund blocked', async()=>{ const p=await cashier(); await H.add(p,'lemonade'); await H.pay(p,{cash:199}); const o=await H.lastOrder(p); await H.orderRowAct(p,o.orderNo,'refund'); ok(await p.$('[data-t=owner-pin]'),'owner PIN asked'); await H.ownerPin(p,'1111');
   await p.fill('[data-t=ramount]','500'); await p.fill('[data-t=rreason]','spilled'); await H.modalOk(p); ok(/199|max|at most|<=/i.test(await p.textContent('[data-t=modal-err]')),'over-refund'); await p.fill('[data-t=ramount]','100'); await H.modalOk(p);
   eq((await H.lastOrder(p)).refunds[0].amount,100); await H.go(p,'reports'); ok((await p.textContent('[data-t=r-refunds]')).includes('100'),'refund in report'); await p.ctx.close(); });
 test('Void/Refund','Voided orders excluded from report totals', async()=>{ const p=await owner(); await H.add(p,'baja'); await H.pay(p,{cash:199}); await H.add(p,'lemonade'); await H.pay(p,{cash:199}); await H.orderRowAct(p,1606,'void'); await p.fill('[data-t=vreason]','test'); await H.modalOk(p); await H.go(p,'reports'); ok((await p.textContent('[data-t=r-net]')).includes('199'),'net'); eq((await p.textContent('[data-t=r-orders]')).replace(/\D/g,''),'1'); await p.ctx.close(); });
@@ -204,7 +204,7 @@ test('Charge screen','One-tap cash tender places order with change; bank/card on
   const p=await owner({viewport:{width:1366,height:638}}); await H.add(p,'baja'); await H.openCheckout(p);
   ok(await p.isVisible('[data-t=qpay]'),'charge screen'); ok((await p.textContent('[data-t=q-total]')).includes('199'),'total');
   ok(await p.isVisible('[data-t=q-tender-500]'),'500 tender'); ok(!(await p.$('[data-t=q-cod]')),'no COD for walk-in'); ok(await p.isVisible('[data-t=q-card]'),'card');
-  const inView=await p.evaluate(()=>[...document.querySelectorAll('.qrow,.qcash,[data-t=pay-split]')].every(e=>{const r=e.getBoundingClientRect(); return r.bottom<=innerHeight+1&&r.top>=0;})); ok(inView,'rows off-screen at 1366x768');
+  const inView=await p.evaluate(()=>[...document.querySelectorAll('.qrow,.qcash,[data-t=q-split-go]')].every(e=>{const r=e.getBoundingClientRect(); return r.bottom<=innerHeight+1&&r.top>=0;})); ok(inView,'rows off-screen at 1366x768');
   await p.screenshot({path:SH+'flow-charge-1366.png'});
   await p.click('[data-t=q-tender-500]'); await H.sleep(p,400); ok(!(await p.$('.modal-bg')),'closed'); let o=await H.lastOrder(p); eq(o.payments.map(x=>[x.method,x.amount]),[['cash',199]]); eq(o.change,301);
   ok((await H.toastText(p)).includes('301'),'change toast');
@@ -239,6 +239,29 @@ test('Orders view','Pills, filters, sort, search, owner CSV, row click detail, d
   const q=await cashier({ipad:true,viewport:{width:1024,height:748}}); await H.add(q,'baja'); await H.pay(q,{cash:199}); await H.go(q,'orders'); ok(!(await q.$('[data-t=orders-csv]')),'cashier no csv');
   await q.screenshot({path:SH+'flow-orders-ipad.png'}); await q.click('tr.orow td.oitems'); await H.sleep(q,300); ok(await q.isVisible('[data-t=d-items]'),'ipad detail');
   const fits=await q.evaluate(()=>{const r=document.querySelector('.modal').getBoundingClientRect(); return r.right<=innerWidth+1&&r.left>=0;}); ok(fits,'modal fits iPad'); await q.screenshot({path:SH+'flow-order-detail-ipad.png'}); await q.ctx.close(); });
+test('Charge screen','Split row: cash 100 + HBL remaining auto-fills, change on cash part, till counts each method; receipt + detail list parts', async()=>{ const p=await owner({viewport:{width:1366,height:638}});
+  await H.go(p,'till'); await p.click('[data-t=open-till]'); await H.sleep(p); await p.fill('[data-t=float]','1000'); await H.modalOk(p); await H.go(p,'pos');
+  await H.add(p,'baja'); await H.openCheckout(p); ok(await p.isVisible('[data-t=q-splitrow]'),'split row visible'); await p.fill('[data-t=q-split-a0]','100'); await H.sleep(p,100);
+  eq(await p.inputValue('[data-t=q-split-a1]'),'99'); eq(await p.inputValue('[data-t=q-split-m1]'),'hbl'); await p.fill('[data-t=q-split-tendered]','500'); await H.sleep(p,100);
+  ok((await p.textContent('[data-t=q-split-change]')).includes('400'),'change'); await p.screenshot({path:'/workspace/pos_build/screens/flow-charge-split.png'});
+  await p.click('[data-t=q-split-go]'); await H.sleep(p,400); const o=await H.lastOrder(p); eq(o.payments.map(x=>[x.method,x.amount]).sort(),[['cash',100],['hbl',99]]); eq(o.change,400);
+  await H.go(p,'orders'); await p.click('[data-t=odetail]'); await H.sleep(p,300); const dp=await p.textContent('[data-t=d-payments]'); ok(dp.includes('100')&&dp.includes('99'),'detail parts');
+  const rec=await p.evaluate(()=>document.querySelector('[data-t=receipt-preview]').textContent); ok(/HBL/i.test(rec)&&rec.includes('100'),'receipt parts'); await p.keyboard.press('Escape'); await H.sleep(p,200);
+  await H.go(p,'till'); eq((await p.textContent('[data-t=sum-cash]')).replace(/\D/g,''),'100'); eq((await p.textContent('[data-t=sum-bank]')).replace(/\D/g,''),'99'); eq((await p.textContent('[data-t=expected]')).replace(/\D/g,''),'1100');
+  await p.screenshot({path:'/workspace/pos_build/screens/flow-till-1366.png'});
+  await p.click('[data-t=close-till]'); await H.sleep(p); await p.fill('[data-t=counted]','1050'); ok((await p.textContent('[data-t=os-preview]')).includes('SHORT by Rs 50'),'short flag'); await p.fill('[data-t=left]','1000'); await H.modalOk(p); await H.sleep(p,300);
+  ok((await ev(p,()=>window.__lastBrowserPrint||'')).includes('SHIFT REPORT'),'shift report printed'); ok(await p.isVisible('[data-t=shift-closed]'),'closed shown');
+  await p.click('[data-t=open-till]'); await H.sleep(p); await p.fill('[data-t=float]','1000'); await H.modalOk(p); await H.sleep(p,300);
+  eq((await p.textContent('[data-t=sum-cash]')).replace(/\D/g,''),'0'); eq((await p.textContent('[data-t=expected]')).replace(/\D/g,''),'1000');
+  await H.go(p,'pos'); await H.add(p,'baja'); await H.pay(p,{cash:199}); const o2=await H.lastOrder(p); const ss=await ev(p,()=>__pos.db.all('shifts')); eq(ss.length,2); eq(o2.shiftId,ss.find(s=>!s.closedAt).id);
+  await H.go(p,'till'); eq((await p.textContent('[data-t=sum-cash]')).replace(/\D/g,''),'199'); await p.ctx.close(); });
+test('Top bar','Printer dot red without helper, sync pill, mute toggle (off by default) silences alert; proof button in detail', async()=>{ const p=await owner();
+  ok(await p.isVisible('[data-t=printer-dot]'),'printer dot'); ok(/not answering/.test(await p.getAttribute('[data-t=printer-dot]','title')),'red tooltip');
+  await H.go(p,'settings'); await p.click('[data-t=tab-print]'); await H.sleep(p,300);
+  if(await p.$('[data-t=mute-alerts]')){ ok(!(await p.isChecked('[data-t=mute-alerts]')),'mute off by default'); await p.check('[data-t=mute-alerts]'); await H.sleep(p,200); ok(await ev(p,()=>__pos.App.alertMute),'muted'); }
+  else throw new Error('mute toggle not found');
+  await H.go(p,'pos'); await H.add(p,'baja'); await H.pay(p,{hbl:199}); await ev(p,async()=>{ const o=(await __pos.db.all('orders')).sort((a,b)=>b.createdAt-a.createdAt)[0]; o.web={id:'x',payment_method:'bank_hbl',proof:'https://example.com/p.jpg',verified:false}; await __pos.db.put('orders',o); });
+  await H.go(p,'orders'); await p.click('[data-t=odetail]'); await H.sleep(p,300); eq(await p.getAttribute('[data-t=d-view-proof]','href'),'https://example.com/p.jpg'); await p.ctx.close(); });
 test('Payments','Rider COD: one clean payment line; #1607 bad data repaired on load', async()=>{ const p=await owner();
   await ev(p,async()=>{ const o=(await __pos.db.all('orders'))[0]||null; const t=Date.now()-60000; const lines=[{itemId:'combo1',name:'Combo 1',qty:2,unitPrice:1099,addons:[]}];
     await __pos.db.put('orders',{id:'t1607',orderNo:1607,channel:'whatsapp',type:'delivery',status:'done',location:'main',createdAt:t,businessDate:__pos.L?__pos.L.businessDate(t):undefined,lines,delivery:{zone:'',charge:320},

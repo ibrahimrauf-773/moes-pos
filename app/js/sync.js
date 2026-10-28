@@ -19,12 +19,12 @@ async function register(c,deviceId){ if(await db.kvGet('syncDevice')) return;
   const all=await api(c,'moes_devices?select=idx&order=idx.asc'); const rank=all.findIndex(r=>r.idx===row.idx);
   const st=await db.kvGet('settings',{}); if(!st.devicePrefix&&rank>0){ st.devicePrefix=String.fromCharCode(65+Math.min(rank,25))+'-'; await db.kvSet('settings',st); }
   await db.kvSet('syncDevice',{idx:row.idx,rank,at:Date.now()}); }
-export async function syncNow(log=()=>{}){
+export async function syncNow(log=()=>{},{full=false}={}){
   const c=await config(); if(!c.enabled||!c.url||!navigator.onLine||running) return {skipped:true};
   running=true; const deviceId=await db.kvGet('deviceId'); let pushed=0, pulled=0;
   try{
     await register(c,deviceId);
-    const first=!(await db.kvGet('syncInit',false)); // first sync: push EVERYTHING this device has
+    const first=full||!(await db.kvGet('syncInit',false)); // first sync: push EVERYTHING this device has
     for(const s of STORES){
       const dirty=(await db.all(s)).filter(o=>first||o.dirty);
       for(let i=0;i<dirty.length;i+=200){
@@ -48,8 +48,8 @@ export async function syncNow(log=()=>{}){
           await db.put(row.store,{...row.data,updatedAt:row.updated_at},true); pulled++; } }
       await db.kvSet('syncSeq',since); if(rows.length<500) break;
     }
-    await db.kvSet('lastSync',{at:Date.now(),pushed,pulled,ok:true}); return {pushed,pulled};
-  }catch(e){ await db.kvSet('lastSync',{at:Date.now(),ok:false,error:String(e.message||e)}); log('sync failed: '+e.message); return {error:String(e.message||e)}; }
+    await db.kvSet('lastSync',{at:Date.now(),okAt:Date.now(),pushed,pulled,ok:true}); return {pushed,pulled};
+  }catch(e){ await db.kvSet('lastSync',{at:Date.now(),okAt:(await db.kvGet('lastSync'))?.okAt||0,ok:false,error:String(e.message||e)}); log('sync failed: '+e.message); return {error:String(e.message||e)}; }
   finally{ running=false; }
 }
 let timer=null;
