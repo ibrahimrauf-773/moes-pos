@@ -14,10 +14,10 @@ export async function connect(password,{url,anonKey,email}={}){ await config(); 
   const r=await fetch(cfg.url+'/auth/v1/token?grant_type=password',{method:'POST',headers:{apikey:cfg.anonKey,'Content-Type':'application/json'},body:JSON.stringify({email:cfg.email,password})});
   const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error('Sign-in failed: '+(j.error_description||j.msg||j.error||r.status));
   if(j.user?.app_metadata?.role!=='pos') throw new Error('This account is not a POS account (app_metadata.role must be "pos")');
-  setTok(j); cfg.connected=true; cfg.connectedAt=Date.now(); cfg.lastError=null; await save(); start(); return true; }
+  setTok(j); cfg.connected=true; cfg.connectedAt=Date.now(); cfg.lastError=null; await save(); start(); try{ dispatchEvent(new Event('pos-online-connected')); }catch{} return true; }
 export async function disconnect(){ await config(); stop(); Object.assign(cfg,{connected:false,access:null,refresh:null,exp:0}); await save(); emit(); }
 let refreshing=null;
-async function token(){ await config(); if(cfg.access&&Date.now()<cfg.exp) return cfg.access; if(!cfg.refresh) throw new Error('Online orders not connected');
+export async function token(){ await config(); if(cfg.access&&Date.now()<cfg.exp) return cfg.access; if(!cfg.refresh) throw new Error('Online orders not connected');
   return refreshing??=(async()=>{ try{
     const r=await fetch(cfg.url+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{apikey:cfg.anonKey,'Content-Type':'application/json'},body:JSON.stringify({refresh_token:cfg.refresh})});
     const j=await r.json().catch(()=>({}));

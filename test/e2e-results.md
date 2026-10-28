@@ -68,7 +68,7 @@
 | 66 | Settings | Activity log records login, order, discount | PASS |  |
 | 67 | Sync | Two devices sync via Supabase mock; distinct numbers; recipes never synced | PASS |  |
 | 68 | Sync | Sync server down: sale still succeeds, error recorded, retried later | PASS |  |
-| 69 | Sync | Wrong shop key rejected by server, local data intact | PASS |  |
+| 69 | Sync | Bad/expired session rejected by server, local data intact | PASS |  |
 | 70 | Printing | Laptop: receipt + kitchen ticket printed via helper (ESC/POS bytes), no recipe | PASS |  |
 | 71 | Printing | Printer offline: sale not blocked, job queued, retry prints later | PASS |  |
 | 72 | Printing | iPad: printing hidden, no print jobs | PASS |  |

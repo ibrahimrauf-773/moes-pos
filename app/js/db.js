@@ -12,7 +12,8 @@ export const all=(s)=>tx(s,'readonly',st=>st.getAll());
 export const del=(s,id)=>tx(s,'readwrite',st=>st.delete(id));
 export const clear=(s)=>tx(s,'readwrite',st=>st.clear());
 // put: stamps updatedAt (unless raw) so the sync layer can find changes
-export const put=(s,obj,raw=false)=>{ if(!raw){ obj.updatedAt=Date.now(); obj.dirty=1; } return tx(s,'readwrite',st=>st.put(obj)); };
+let dirtyCb=null; export const onDirty=f=>{dirtyCb=f;}; const ping=()=>{ try{ dirtyCb&&dirtyCb(); }catch{} };
+export const put=(s,obj,raw=false)=>{ if(!raw){ obj.updatedAt=Date.now(); obj.dirty=1; ping(); } return tx(s,'readwrite',st=>st.put(obj)); };
 export const putMany=async(s,arr,raw=false)=>{ const db=await open(); return new Promise((res,rej)=>{ const t=db.transaction(s,'readwrite'); const st=t.objectStore(s);
   for(const o of arr){ if(!raw){o.updatedAt=o.updatedAt||Date.now(); o.dirty=1;} st.put(o);} t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); }); };
 export const kvGet=async(k,d=null)=>{ const r=await get('kv',k); return r?r.v:d; };
@@ -27,6 +28,6 @@ export async function atomic(ops, counterKey=null, onCounter=null){
     const fail=e=>{ try{ t.abort(); }catch{} rej(e); };
     if(counterKey){ const kv=t.objectStore('kv'); const r=kv.get(counterKey); r.onsuccess=()=>{ try{ const n=r.result?r.result.v:null; result=onCounter(n); kv.put({id:counterKey,v:result.next}); writeAll(); }catch(e){ fail(e); } }; }
     else { try{ writeAll(); }catch(e){ return fail(e); } }
-    t.oncomplete=()=>res(result); t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error||new Error('Transaction aborted')); });
+    t.oncomplete=()=>{ if(ops.some(o=>!o.raw)) ping(); res(result); }; t.onerror=()=>rej(t.error); t.onabort=()=>rej(t.error||new Error('Transaction aborted')); });
 }
 export const isQuotaError=e=>e && (e.name==='QuotaExceededError' || /quota/i.test(e.message||''));
