@@ -229,6 +229,30 @@ async function discountFlow(){ const d=App.draft;
   else disc.approvedBy=App.user.name;
   d.discount=disc; await saveDraft(); await logAct('discount',{draft:d.id,...disc}); renderPOS();
 }
+// GrandPOS-style one-tap charge screen. Returns a payment-form result, 'split' for the full form, or null (cancelled).
+function tenders(T){ const up=n=>Math.ceil(T/n)*n; return [...new Set([T,up(50),up(100),up(500),up(1000),up(2000)].filter(x=>x>=T))].sort((a,b)=>a-b).slice(0,5); }
+async function quickPay(d,t,methods){ const T=t.total, has=id=>methods.some(m=>m.id===id), deliv=t.delivery||0;
+  const row=(k,label,sub,amt,extra='')=>`<button type="button" class="qrow" data-q="${k}" data-t="q-${k}"><span class="ql"><b>${label}</b>${sub?`<small>${sub}</small>`:''}</span>${extra}<span class="qa">${amt}</span><span class="chev">›</span></button>`;
+  const body=`<div class="qpay" data-t="qpay"><div class="qtot"><small>TOTAL AMOUNT</small><div data-t="q-total">${L.rs(T)}</div><p>Select payment to place order and print receipt</p></div>
+    ${T>0?`<div class="qcash" data-t="q-cashrow"><span class="ql"><b>Cash</b><small>Tap the amount the customer is giving you</small></span><span class="qbtns">${tenders(T).map(v=>`<button type="button" class="qt" data-tender="${v}" data-t="q-tender-${v}">${L.rs(v)}</button>`).join('')}<span class="qcust"><input inputmode="numeric" placeholder="Custom" data-t="q-custom" aria-label="Custom cash amount"><button type="button" class="qt" data-t="q-custom-go">Go</button></span></span></div>`:row('zero','Complete (nothing to pay)','',L.rs(0))}
+    ${T>0&&has('hbl')?row('hbl','Bank Transfer – HBL','••6903 transfer / Raast',L.rs(T)):''}
+    ${T>0&&has('bah')?row('bah','Bank Transfer – Bank Al Habib','••5901',L.rs(T)):''}
+    ${T>0&&has('card')?row('card','Card','',L.rs(T)):''}
+    ${T>0&&d.channel==='whatsapp'?row('cod','Speedway COD','Rider collects '+L.rs(T)+' from customer',`Rider hands over ${L.rs(Math.max(0,T-deliv))}`):''}
+    ${T>0&&d.channel!=='foodpanda'?row('later','Pay Later / Tab',d.customer?.name?esc(d.customer.name)+"'s tab – not drawer cash":'needs customer phone + name',L.rs(T)):''}
+  </div>`;
+  const blank=Object.fromEntries(methods.map(m=>['p_'+m.id,''])); const mk=o=>({...blank,tendered:'',pref:'',...o});
+  return await new Promise(res=>{ const p=modal('Charge',body,{ok:'Split / other…',cancel:'Cancel',wide:true}); p.then(v=>res(v?'split':null));
+    const ok=$('[data-t=modal-ok]'); if(ok){ ok.classList.remove('primary'); ok.dataset.t='pay-split'; ok.classList.add('ghost'); }
+    const done=v=>{ closeModal(); res(v); };
+    $$('[data-tender]').forEach(b=>b.onclick=()=>done(mk({p_cash:String(T),tendered:b.dataset.tender})));
+    const cust=()=>{ const v=parseInt(String($('[data-t=q-custom]').value).replace(/\D/g,''),10); if(!(v>=T)) return modalErr(`Custom cash must be at least ${L.rs(T)}`); done(mk({p_cash:String(T),tendered:String(v)})); };
+    const cg=$('[data-t=q-custom-go]'); if(cg){ cg.onclick=cust; $('[data-t=q-custom]').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); cust(); } }; }
+    $$('[data-q]').forEach(b=>b.onclick=()=>{ const k=b.dataset.q;
+      if(k==='zero') return done(mk({}));
+      if(k==='cod') return done(mk({unpaid:'on'}));
+      if(k==='later'){ if(!d.customer?.name||!L.validPhone(d.customer?.phone||'')) return modalErr('Pay Later needs a customer: enter phone and name (or + Add customer)'); return done(mk({paylater:'on',unpaid:'on'})); }
+      done(mk({['p_'+k]:String(T)})); }); }); }
 async function checkout(){ const d=App.draft; if(!d.lines.length) return;
   if(d.customer?.phone){ d.customer.phone=L.normPhone(d.customer.phone); if(!L.validPhone(d.customer.phone)) throw new Error('Phone must look like 03XXXXXXXXX or +92…'); }
   if(d.channel==='whatsapp'){ if(!d.customer?.name||!d.customer?.phone) throw new Error('WhatsApp order needs customer name and phone'); if(!/^0\d{9,10}$/.test(d.customer.phone)) throw new Error('Phone must look like 03XXXXXXXXX'); if(!d.delivery) throw new Error('Pick a delivery zone'); }
@@ -237,7 +261,8 @@ async function checkout(){ const d=App.draft; if(!d.lines.length) return;
   const t=L.computeTotals(d,App.policy);
   const methods=d.channel==='foodpanda'?[S.PAY_METHODS[4],...S.PAY_METHODS.slice(0,4)]:S.PAY_METHODS.filter(m=>m.id!=='fp_online');
   const pre=d.channel==='foodpanda'?{fp_online:t.total}:{cash:t.total};
-  const r=await form('Payment – '+L.rs(t.total),`<p class="muted">Split payment: enter amounts in more than one method. Cash tendered is only for change.</p>${methods.map(m=>`<label class="payrow">${esc(m.name)}<input name="p_${m.id}" inputmode="numeric" value="${pre[m.id]??''}" data-t="pay-${m.id}"></label>`).join('')}
+  let r=null; if(d.channel!=='foodpanda'){ const q=await quickPay(d,t,methods); if(q===null) return; if(q!=='split') r=q; }
+  if(!r) r=await form('Payment – '+L.rs(t.total),`<p class="muted">Split payment: enter amounts in more than one method. Cash tendered is only for change.</p>${methods.map(m=>`<label class="payrow">${esc(m.name)}<input name="p_${m.id}" inputmode="numeric" value="${pre[m.id]??''}" data-t="pay-${m.id}"></label>`).join('')}
     <label>Cash tendered (optional)<input name="tendered" inputmode="numeric" data-t="tendered"></label><label>Payment ref / note<input name="pref" data-t="pref" maxlength="100"></label>
     ${d.channel==='whatsapp'?'<label class="radio"><input type="checkbox" name="unpaid" data-t="unpaid"> COD – collect on delivery (record payment later)</label>':''}
     ${d.channel!=='foodpanda'?`<label class="radio paylater"><input type="checkbox" name="paylater" data-t="paylater"> Pay Later – put ${d.customer?.name?esc(d.customer.name)+"'s":'the customer'} tab (unpaid amount is NOT cash in the drawer; enter any part-payment above)</label>`:''}`,
@@ -274,15 +299,46 @@ async function commitOrder1(order){
 
 // ---------- Orders list ----------
 async function ordersFor(bd,loc){ return (await db.all('orders')).filter(o=>o.businessDate===bd&&(loc==null||(o.location||'main')===loc)).sort((a,b)=>a.createdAt-b.createdAt); }
-async function renderOrders(bd){ bd=bd||App.ordersDate||L.businessDate(now()); App.ordersDate=bd; const os=await ordersFor(bd,App.loc);
+const chKey=o=>o.channel==='instore'?(o.type==='dine_in'?'dinein':'takeaway'):o.channel==='phone'?'delivery':o.channel;
+const CH_NAMES={dinein:'Dine-in',takeaway:'Takeaway',delivery:'Delivery',website:'Website',whatsapp:'WhatsApp',foodpanda:'Foodpanda',mashion:'Mashion'};
+const chPill=o=>{ const k=chKey(o); return `<span class="pill ch-${k}" data-t="ch-pill">${esc(CH_NAMES[k]||k)}${o.fp?.orderId?' · '+esc(o.fp.orderId):''}</span>`; };
+const stKey=o=>o.status==='void'?'void':o.status==='cancelled'?'cancelled':L.refunded(o)?'refunded':L.due(o,App.policy)>0?(o.credit?'tab':L.isDelivery(o)&&(o.unpaid||o.rider)?'cod':'due'):'paid';
+const ST_NAMES={void:'Void',cancelled:'Cancelled',refunded:'Refunded',tab:'Pay Later',cod:'COD (rider)',due:'Due',paid:'Paid'};
+const stPill=o=>`<span class="pill st-${stKey(o)}" data-t="st-pill">${ST_NAMES[stKey(o)]}${o.flow&&!['void','cancelled'].includes(o.status)?' · '+esc(L.flowLabel(o)):''}</span>`;
+const relTime=ts=>{ const m=Math.round((now()-ts)/60000); return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' hours ago':Math.round(m/1440)+' days ago'; };
+async function renderOrders(bd){ bd=bd||App.ordersDate||L.businessDate(now()); App.ordersDate=bd; const f=App.ordersF??={to:'',status:'',ch:'',min:'',max:'',q:'',sort:'time',dir:-1};
+  const to=f.to&&f.to>=bd?f.to:bd; const all=(await db.all('orders')).filter(o=>o.businessDate>=bd&&o.businessDate<=to&&(App.loc==null||(o.location||'main')===App.loc));
+  const q=f.q.trim().toLowerCase(), qd=q.replace(/\D/g,'');
+  let os=all.filter(o=>{ const t=L.computeTotals(o,App.policy).total; if(f.status&&stKey(o)!==f.status) return false; if(f.ch&&chKey(o)!==f.ch) return false;
+    if(f.min!==''&&t<+f.min) return false; if(f.max!==''&&t>+f.max) return false;
+    if(q&&!(String(o.orderNo??'').includes(q)||String(o.fp?.orderId||'').toLowerCase().includes(q)||(o.customer?.name||'').toLowerCase().includes(q)||(qd.length>=3&&(o.customer?.phone||'').includes(qd)))) return false; return true; });
+  const key={no:o=>+o.orderNo||0,time:o=>o.createdAt,total:o=>L.computeTotals(o,App.policy).total,status:o=>stKey(o),customer:o=>(o.customer?.name||'~').toLowerCase(),channel:o=>chKey(o)}[f.sort]||(o=>o.createdAt);
+  os.sort((a,b)=>{ const x=key(a),y=key(b); return (x>y?1:x<y?-1:0)*f.dir; });
   P.checkHelper().catch(()=>{});
-  $('#main').innerHTML=`<div class="pad1"><div class="row"><h2>Orders – business date</h2><input type="date" id="obd" value="${bd}" data-t="obd"><span class="muted">${os.length} orders</span></div>
-   <table class="tbl" data-t="orders"><tr><th>#</th><th>Time</th><th>Channel</th><th>Items</th><th>Total</th><th>Paid</th><th>Status</th><th></th></tr>
-   ${os.map(o=>{const t=L.computeTotals(o,App.policy); return `<tr data-o="${o.id}" data-no="${esc(o.orderNo??o.fp?.orderId)}" class="st-${o.status}"><td>${esc(o.orderNo??'')}${o.fp?.orderId?`<br><small>FP ${esc(o.fp.orderId)}</small>`:''}</td><td>${L.fmtTime(o.createdAt)}</td><td>${esc(chLabel(o))}</td>
-   <td>${o.lines.map(l=>`${l.qty}× ${esc(l.name)}${l.heat?' ('+l.heat+')':''}`).join('<br>')||(o.fp?.itemsPending?'<i>items pending</i>':'')}</td><td>${L.rs(t.total)}</td><td>${o.payments.map(p=>esc(p.method)+' '+p.amount).join('<br>')}${L.refunded(o)?`<br><b>refunded ${L.refunded(o)}</b>`:''}${L.paid(o)<t.total&&o.status!=='void'?'<br><b class="warn">DUE</b>':''}</td><td>${o.status}${o.flow?`<br><small data-t="oflow">${esc(L.flowLabel(o))}</small>`:''}</td>
-   <td class="acts">${o.status!=='void'?`<button class="btn small" data-act="pay">+Pay</button><button class="btn small" data-act="refund" data-t="refund">Refund</button><button class="btn small danger" data-act="void" data-t="void">Void</button>`:''}<button class="btn small" data-act="reprint" data-t="reprint">Reprint receipt</button><button class="btn small" data-act="kreprint" data-t="kreprint">Reprint kitchen</button>${L.isDelivery(o)?`<button class="btn small" data-act="speedway" data-t="speedway">Copy for Speedway</button>`:''}<button class="btn small ghost" data-act="detail" data-t="odetail">Details</button></td></tr>`}).join('')}</table></div>`;
+  const th=(k,n)=>`<th class="sortable${f.sort===k?' sorted':''}" data-sort="${k}" data-t="sort-${k}">${n} ${f.sort===k?(f.dir>0?'▲':'▼'):'⇅'}</th>`;
+  const sel=(id,cur,opts,label)=>`<select id="${id}" data-t="${id}"><option value="">${label}</option>${opts.map(([v,n])=>`<option value="${v}" ${cur===v?'selected':''}>${n}</option>`).join('')}</select>`;
+  $('#main').innerHTML=`<div class="pad1 ordersv"><div class="ohead"><h2>Orders</h2><span class="muted" data-t="ocount">${os.length} of ${all.length} orders</span>${App.user.role==='owner'?'<button class="btn small" id="ocsv" data-t="orders-csv">Export CSV</button>':''}</div>
+   <div class="ofilters" data-t="ofilters"><span class="muted">Filters:</span><label class="drange">From <input type="date" id="obd" value="${bd}" data-t="obd"></label><label class="drange">to <input type="date" id="obd2" value="${to}" data-t="obd2"></label>
+    ${sel('ofst',f.status,Object.entries(ST_NAMES),'All statuses')}${sel('ofch',f.ch,Object.entries(CH_NAMES),'All channels')}
+    <input id="ofmin" data-t="ofmin" inputmode="numeric" placeholder="Min total" value="${esc(f.min)}"><span>–</span><input id="ofmax" data-t="ofmax" inputmode="numeric" placeholder="Max total" value="${esc(f.max)}">
+    <input id="ofq" data-t="ofq" type="search" placeholder="Search name, phone, order no" value="${esc(f.q)}"></div>
+   <div class="otwrap"><table class="tbl otable" data-t="orders"><thead><tr>${th('no','#')}${th('customer','Customer')}<th>Items</th>${th('channel','Channel')}${th('time','Time')}${th('status','Status')}${th('total','Total')}<th></th></tr></thead><tbody>
+   ${os.map(o=>{const t=L.computeTotals(o,App.policy); const n=(o.lines||[]).length; return `<tr data-o="${o.id}" data-no="${esc(o.orderNo??o.fp?.orderId)}" class="orow st-${o.status}" tabindex="0">
+   <td class="ono">#${esc(o.orderNo??'')}</td><td>${o.customer?.name||o.customer?.phone?`<b>${esc(o.customer?.name||'')}</b><br><small class="muted">${esc(o.customer?.phone||'')}</small>`:'<span class="muted">Walk-in</span>'}</td>
+   <td class="oitems">${(o.lines||[]).map(l=>`${l.qty}× ${esc(l.name)}`).join(', ')||(o.fp?.itemsPending?'<i>items pending</i>':'')}${n>2?`<br><small class="muted">${n} items</small>`:''}</td>
+   <td>${chPill(o)}</td><td><span data-t="orel">${relTime(o.createdAt)}</span><br><small class="muted">${L.fmtTime(o.createdAt)} · ${esc(o.businessDate)}</small></td><td>${stPill(o)}</td><td class="ototal"><b>${L.rs(t.total)}</b></td>
+   <td class="acts">${o.status!=='void'?`<button class="btn small" data-act="pay" title="Add payment">+Pay</button><button class="btn small" data-act="refund" data-t="refund">Refund</button><button class="btn small danger" data-act="void" data-t="void">Void</button>`:''}<button class="btn small" data-act="reprint" data-t="reprint" title="Print receipt">Receipt</button><button class="btn small" data-act="kreprint" data-t="kreprint" title="Print kitchen ticket">Kitchen</button>${L.isDelivery(o)?`<button class="btn small" data-act="speedway" data-t="speedway">Speedway</button>`:''}<button class="btn small ghost" data-act="detail" data-t="odetail">Open</button></td></tr>`}).join('')||`<tr><td colspan="8" class="muted" data-t="onone">No orders match.</td></tr>`}</tbody></table></div></div>`;
   App.ordersCache=Object.fromEntries(os.map(o=>[o.id,o]));
   $('#obd').onchange=e=>renderOrders(e.target.value);
+  $('#obd2').onchange=e=>{ f.to=e.target.value; renderOrders(bd); };
+  $('#ofst').onchange=e=>{ f.status=e.target.value; renderOrders(bd); }; $('#ofch').onchange=e=>{ f.ch=e.target.value; renderOrders(bd); };
+  for(const [id,k] of [['#ofmin','min'],['#ofmax','max'],['#ofq','q']]) $(id).onchange=e=>{ f[k]=k==='q'?e.target.value:String(e.target.value).replace(/\D/g,''); renderOrders(bd).then(()=>{ if(k==='q'){ const i=$('#ofq'); i&&i.focus(); } }); };
+  $$('[data-sort]').forEach(h=>h.onclick=()=>{ const k=h.dataset.sort; if(f.sort===k) f.dir=-f.dir; else { f.sort=k; f.dir=k==='time'||k==='total'||k==='no'?-1:1; } renderOrders(bd); });
+  const csv=$('#ocsv'); if(csv) csv.onclick=()=>{ if(App.user.role!=='owner') return; const rows=[['orderNo','businessDate','time','customer','phone','channel','items','status','total']];
+    for(const o of os) rows.push([o.orderNo,o.businessDate,L.fmtDT(o.createdAt),o.customer?.name||'Walk-in',o.customer?.phone||'',CH_NAMES[chKey(o)]||o.channel,(o.lines||[]).map(l=>l.qty+'x '+l.name).join('; '),ST_NAMES[stKey(o)],L.computeTotals(o,App.policy).total]);
+    const txt=rows.map(r=>r.map(v=>{ v=String(v??''); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }).join(',')).join('\n'); window.__lastOrdersCsv=txt;
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([txt],{type:'text/csv'})); a.download=`orders-${bd}_${to}.csv`; a.click(); logAct('orders-csv',{from:bd,to,rows:os.length}); };
+  $$('tr.orow').forEach(tr=>{ tr.onclick=e=>{ if(e.target.closest('button,a,input,select')) return; orderDetail(App.ordersCache[tr.dataset.o]); }; tr.onkeydown=e=>{ if(e.key==='Enter'&&e.target===tr) orderDetail(App.ordersCache[tr.dataset.o]); }; });
   $$('[data-act]').forEach(b=>b.onclick=()=>{ const id=b.closest('tr').dataset.o, a=b.dataset.act; if(a==='reprint'||a==='kreprint') return doReprint(App.ordersCache[id],a); if(a==='speedway') return copySpeedway(App.ordersCache[id]); safe(()=>orderAction(id,a)); });
 }
 // Synchronous on tap so the browser print dialog is allowed (iPad); helper used when the laptop helper is alive.
@@ -291,9 +347,30 @@ function doReprint(o,act){ if(!o) return; const kind=act==='reprint'?'receipt':'
 function copySpeedway(o){ if(!o) return; const txt=L.speedwayText(o,App.policy,App.zones); logAct('speedway-copy',{orderNo:o.orderNo});
   const fallback=()=>{ modal('Copy for Speedway',`<p class="muted">Select all and copy, then paste in the Speedway group.</p><textarea data-t="speedway-text" rows="9" readonly style="width:100%">${esc(txt)}</textarea>`,{ok:'Done',cancel:''}).then(closeModal); setTimeout(()=>{const ta=$('[data-t=speedway-text]'); if(ta){ta.focus(); ta.select(); ta.setSelectionRange(0,txt.length);}},50); };
   try{ if(navigator.clipboard&&window.isSecureContext) navigator.clipboard.writeText(txt).then(()=>toast('Copied for Speedway'),fallback); else fallback(); }catch(e){ fallback(); } }
-async function orderDetail(o){ const rec=P.build('receipt',o,App.settings).text.join('\n');
-  const p=modal('Order #'+(o.orderNo??''),`<pre class="receipt-preview" data-t="receipt-preview">${esc(rec)}</pre><div class="row"><button type="button" class="btn primary" data-dact="reprint" data-t="d-reprint">Reprint receipt</button><button type="button" class="btn" data-dact="kreprint" data-t="d-kreprint">Reprint kitchen ticket</button>${L.isDelivery(o)?`<button type="button" class="btn" data-dact="speedway" data-t="d-speedway">Copy for Speedway</button>`:''}</div>`,{ok:'Close',cancel:''});
-  $$('[data-dact]').forEach(b=>b.onclick=()=>b.dataset.dact==='speedway'?copySpeedway(o):doReprint(o,b.dataset.dact)); await p; closeModal(); }
+async function orderDetail(o){ if(!o) return; o=await db.get('orders',o.id)||o; const t=L.computeTotals(o,App.policy), rec=P.build('receipt',o,App.settings).text.join('\n');
+  const cps=L.custPayments(o), r=o.rider, due=L.due(o,App.policy), live=!['void','cancelled'].includes(o.status);
+  const kv=(k,v,cls='')=>`<div class="kv ${cls}"><span>${k}</span><span>${v}</span></div>`;
+  const items=(o.lines||[]).map(l=>{ const unit=(l.unitPrice||0)+(l.addons||[]).reduce((a,x)=>a+(x.price||0),0); return `<tr><td><b>${esc(l.name)}</b>${l.heat?` <small class="muted">(${esc(l.heat)})</small>`:''}${l.foc?' <span class="pill st-tab">FOC</span>':''}
+    ${(l.addons||[]).map(a=>`<div class="sub">+ ${esc(a.name)}${a.price?' · '+L.rs(a.price):''}</div>`).join('')}${(l.combo||l.parts||[]).map(c=>`<div class="sub">${esc(c.name||c)}</div>`).join('')}${l.note?`<div class="sub">Note: ${esc(l.note)}</div>`:''}</td>
+    <td class="num">${l.qty}</td><td class="num">${L.rs(unit)}</td><td class="num">${L.rs(l.foc?0:unit*(l.qty||1))}</td></tr>`; }).join('');
+  const din=o.channel==='instore'?`<div class="dopts" data-t="dining-opts">${[['dine_in','Dine-in'],['takeaway','Takeaway']].map(([k,n])=>`<button type="button" class="btn small ${o.type===k?'primary':''}" data-dine="${k}" data-t="dine-${k}" ${!live?'disabled':''}>${n}</button>`).join('')}</div>`:`<p class="muted small">Channel is set by the order source (${esc(chLabel(o))}).</p>`;
+  const pays=cps.map(p=>kv(esc(PAYN(p.method))+(p.settle?' (tab settled)':''),L.rs(p.amount))).join('')+(r?kv('Cash on delivery (Speedway rider)',L.rs(r.collect||0)):'')+(o.change?kv('Change given',L.rs(o.change)):'')
+    +(L.refunded(o)?kv('Refunded',L.rs(L.refunded(o)),'warn'):'')+(due&&live?kv(o.credit?'Pay Later – due':'Due',L.rs(due),'warn'):'')
+    +(r?`<div class="rider" data-t="d-rider">${esc(L.riderPaysText(o,App.policy))} · ${r.settledAt?'settled by '+esc({cash:'cash',hbl:'HBL',bah:'BAHL'}[r.settledVia]||r.settledVia||'')+' '+L.fmtTime(r.settledAt):r.method==='none'?'nothing due':'<b>Speedway owes – not settled</b>'}${r.speedwayFare!=null&&r.speedwayFare!==(t.delivery||0)?`<br><small>Speedway fare ${L.rs(r.speedwayFare)} vs billed ${L.rs(t.delivery||0)}: delivery difference ${L.rs(r.speedwayFare-(t.delivery||0))}</small>`:''}</div>`:'');
+  const body=`<div class="odet" data-t="odet"><div class="odhead"><div><div class="odsub">${stPill(o)} ${chPill(o)}</div><small class="muted">Placed ${L.fmtDT(o.createdAt)} · by ${esc(o.staffName||'')}</small></div>
+    <div class="odbtns"><button type="button" class="btn primary" data-dact="reprint" data-t="d-reprint">Print Receipt</button><button type="button" class="btn" data-dact="kreprint" data-t="d-kreprint">Print Kitchen Ticket</button>${L.isDelivery(o)?`<button type="button" class="btn" data-dact="speedway" data-t="d-speedway">Copy for Speedway</button>`:''}</div></div>
+   <div class="odgrid"><div class="odleft"><div class="card"><h3>Order Items</h3><table class="tbl ditems" data-t="d-items"><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Total</th></tr></thead><tbody>${items||'<tr><td colspan="4" class="muted">Items pending</td></tr>'}</tbody></table></div>
+     ${o.note?`<div class="card"><h3>Notes</h3><p>${esc(o.note)}</p></div>`:''}<details class="card"><summary>Receipt preview</summary><pre class="receipt-preview" data-t="receipt-preview">${esc(rec)}</pre></details></div>
+    <div class="odright"><div class="card" data-t="d-summary"><h3>Order Summary ${stPill(o)}</h3>${kv('Date & time',L.fmtDT(o.createdAt))}${kv('Subtotal',L.rs(t.subtotal))}${t.discount?kv('Discount'+(o.discount?.reason?' ('+esc(o.discount.reason)+')':''),'−'+L.rs(t.discount)):''}${t.delivery?kv('Delivery'+(o.delivery?.zone?' – zone '+esc(o.delivery.zone):''),L.rs(t.delivery)):''}${t.gst?kv('GST',L.rs(t.gst)):''}${kv('<b>Grand Total</b>','<b>'+L.rs(t.total)+'</b>','gt')}</div>
+     <div class="card" data-t="d-dining"><h3>Dining option ${chPill(o)}</h3>${din}</div>
+     <div class="card" data-t="d-customer"><h3>Customer</h3>${o.customer?.name||o.customer?.phone?`<b>${esc(o.customer.name||'')}</b><br>${esc(o.customer.phone||'')}${o.customer.address?`<br><small>${esc(o.customer.address)}</small>`:''}`:'<span class="muted">Walk-in Customer</span>'}</div>
+     <div class="card" data-t="d-payments"><h3>Payment details</h3>${pays||'<span class="muted">No payment recorded</span>'}</div>
+     ${live?`<div class="card odacts"><button type="button" class="btn small" data-oact="pay" data-t="d-pay">+Pay</button><button type="button" class="btn small" data-oact="refund" data-t="d-refund">Refund</button><button type="button" class="btn small danger" data-oact="void" data-t="d-void">Void</button>${r&&!r.settledAt&&r.method==='later'?`<button type="button" class="btn small" data-oact="settle" data-t="d-settle">Speedway settles</button>`:''}</div>`:''}</div></div></div>`;
+  const p=modal('Order #'+(o.orderNo??''),body,{ok:'Close',cancel:'',wide:true}); $('.modal')?.classList.add('xwide');
+  $$('[data-dact]').forEach(b=>b.onclick=()=>b.dataset.dact==='speedway'?copySpeedway(o):doReprint(o,b.dataset.dact));
+  $$('[data-dine]').forEach(b=>b.onclick=async()=>{ const x=await db.get('orders',o.id); if(!x||x.type===b.dataset.dine) return; const from=x.type; x.type=b.dataset.dine; await db.put('orders',x); await logAct('dining-change',{order:x.orderNo,from,to:x.type}); toast(`#${x.orderNo}: ${b.dataset.dine==='dine_in'?'Dine-in':'Takeaway'}`); closeModal(); refreshViews(); orderDetail(x); });
+  $$('[data-oact]').forEach(b=>b.onclick=()=>{ const a=b.dataset.oact; closeModal(); safe(async()=>{ if(a==='settle') await settleRider(o.id); else await orderAction(o.id,a); refreshViews(); }); });
+  await p; closeModal(); }
 const chLabel=o=>o.channel==='instore'?(o.type==='dine_in'?'Dine-in':'Takeaway'):o.channel==='whatsapp'?`WhatsApp ${o.delivery?.zone||''}`:o.channel==='foodpanda'?'Foodpanda':o.channel==='mashion'?'Mashion':o.channel==='website'?`Website${o.delivery?.zone?' '+o.delivery.zone:''}`:o.channel==='phone'?`Phone ${o.delivery?.zone||''}`:o.channel;
 async function orderAction(id,act){ const o=await db.get('orders',id); const t=L.computeTotals(o,App.policy);
   if(act==='detail') return orderDetail(o);

@@ -186,3 +186,36 @@ nav{flex-wrap:wrap!important;overflow:visible!important;-webkit-mask-image:none!
 .modal{position:relative}
 .modal .mclose{position:absolute;top:8px;right:8px;width:36px;height:36px;border:0;border-radius:8px;background:transparent;color:inherit;font-size:20px;cursor:pointer}
 .modal .mclose:hover{background:rgba(127,127,127,.2)}
+/* GrandPOS-style charge screen */
+.qpay{display:flex;flex-direction:column;gap:0;max-width:820px;margin:0 auto}
+.qtot{text-align:center;padding:6px 0 14px}
+.qtot small{letter-spacing:.08em;font-size:12px;opacity:.75}
+.qtot div{font-size:clamp(34px,6vh,52px);font-weight:800;line-height:1.1}
+.qtot p{margin:10px 0 0;font-weight:600}
+.qrow,.qcash{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:10px 14px;border:0;border-top:1px solid rgba(127,127,127,.3);background:transparent;color:inherit;font:inherit;text-align:left}
+.qrow{cursor:pointer}.qrow:hover,.qrow:focus-visible{background:rgba(127,127,127,.14)}
+.ql{display:flex;flex-direction:column;flex:1 1 auto;min-width:150px}.ql small{opacity:.7;font-size:12px}
+.qa{font-weight:700;color:var(--accent,#4ea1ff);white-space:nowrap}.chev{opacity:.6;font-size:22px}
+.qcash{flex-wrap:wrap}.qbtns{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;flex:3 1 420px}
+.qt{min-height:44px;min-width:84px;padding:6px 10px;border-radius:8px;border:1px solid rgba(127,127,127,.35);background:transparent;color:var(--accent,#4ea1ff);font-weight:700;cursor:pointer}
+.qt:hover{background:rgba(78,161,255,.14)}
+.qcust{display:flex;gap:4px}.qcust input{width:96px;min-height:44px}
+/* Orders list + detail (GrandPOS style) */
+.ordersv .ohead{display:flex;align-items:center;gap:12px;margin-bottom:8px}.ordersv .ohead h2{margin:0}.ordersv .ohead #ocsv{margin-left:auto}
+.ofilters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}.ofilters input,.ofilters select{min-height:36px;padding:4px 8px;border-radius:8px;background:var(--k2);color:inherit;border:1px solid rgba(127,127,127,.4);font-size:14px}
+.ofilters #ofmin,.ofilters #ofmax{width:90px}.ofilters #ofq{flex:1;min-width:200px}.ofilters .drange{display:flex;gap:4px;align-items:center;font-size:13px}
+.otwrap{overflow-x:auto}.otable th.sortable{cursor:pointer;white-space:nowrap;user-select:none}.otable th.sorted{color:var(--o)}
+.otable tr.orow{cursor:pointer}.otable tr.orow:hover td{background:rgba(127,127,127,.12)}.otable td{vertical-align:middle}.otable .oitems{max-width:300px;font-size:13px}.otable .ototal{white-space:nowrap;text-align:right}
+.otable .acts .btn.small{padding:3px 7px;font-size:12px;min-height:28px}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;background:#444;color:#fff}
+.pill.ch-dinein{background:#2d6cdf}.pill.ch-takeaway{background:#7a52c7}.pill.ch-foodpanda{background:#d70f64}.pill.ch-whatsapp{background:#1f9d55}.pill.ch-website{background:#0e8a8a}.pill.ch-delivery{background:#b86e00}.pill.ch-mashion{background:#8a5a00}
+.pill.st-paid{background:#1f9d55}.pill.st-due{background:#c0392b}.pill.st-tab{background:#d68910}.pill.st-void,.pill.st-cancelled{background:#666}.pill.st-refunded{background:#8e44ad}
+.modal.xwide{width:min(1180px,100%)}
+.odet .odhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:-6px 0 10px;padding-right:30px}.odbtns{display:flex;gap:6px;flex-wrap:wrap}
+.odgrid{display:grid;grid-template-columns:1.5fr 1fr;gap:12px}.odet .card{background:rgba(127,127,127,.08);border:1px solid rgba(127,127,127,.25);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.odet h3{margin:0 0 8px;font-size:15px;display:flex;justify-content:space-between;align-items:center;gap:6px}.ditems .num{text-align:right;white-space:nowrap}.ditems .sub{font-size:12px;opacity:.75;padding-left:10px}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:14px}.kv.gt{border-top:1px solid rgba(127,127,127,.4);margin-top:4px;padding-top:6px;font-size:16px}.kv.warn{color:#ff8a65}
+.odet .rider{margin-top:6px;font-size:13px;padding:6px 8px;border-radius:8px;background:rgba(214,137,16,.15)}.dopts,.odacts{display:flex;gap:6px;flex-wrap:wrap}
+@media (max-width:900px){.odgrid{grid-template-columns:1fr}.otable .oitems{max-width:180px}}
+.ofilters select,.ofilters input{width:auto!important;flex:0 0 auto}.ofilters #ofq{flex:1 1 200px!important}.pill.st-cod{background:#b86e00}
+.ofilters #ofmin,.ofilters #ofmax{width:100px!important}
