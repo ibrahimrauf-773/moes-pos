@@ -78,8 +78,9 @@ test('Void/Refund','Voided orders excluded from report totals', async()=>{ const
 // ---- KDS ----
 test('Kitchen','KDS shows ticket, no prices; late turns red at 20m; bump clears', async()=>{ const p=await owner(); await H.add(p,'combo1',{heat:'Reaper'}); await H.pay(p,{cash:1099}); await p.ctx.close();
 });
-test('Kitchen','Kitchen staff: late timer, bump', async()=>{ const p=await fresh(); await H.login(p,'shaheer','1111'); await H.add(p,'combo1',{heat:'Reaper'}); await H.pay(p,{cash:1099}); await p.click('[data-t=logout]'); await H.sleep(p); await H.login(p,'shan','5555');
+test('Kitchen','Kitchen staff: late timer; view-only by default; Ready (setting on) clears', async()=>{ const p=await fresh(); await H.login(p,'shaheer','1111'); await H.add(p,'combo1',{heat:'Reaper'}); await H.pay(p,{cash:1099}); await p.click('[data-t=logout]'); await H.sleep(p); await H.login(p,'shan','5555');
   const t=await p.textContent('[data-t=ticket]'); ok(!/Rs|1,099|1099/.test(t),'price on KDS'); ok(!(await p.$('.ticket.late')),'late too early'); await H.setOffset(p,21*60000); await H.go(p,'kds'); ok(await p.$('.ticket.late'),'not red when late'); ok((await p.textContent('[data-t=timer]')).startsWith('21'),'timer');
+  ok(!(await p.$('[data-t=bump]')),'KDS should be view-only by default'); await ev(p,()=>{ __pos.App.policy.kdsButtons=true; }); await H.go(p,'kds'); ok((await p.textContent('[data-t=bump]')).includes('READY'),'Ready label');
   await p.click('[data-t=bump]'); await H.sleep(p,300); eq(await p.$$('[data-t=ticket]').then(x=>x.length),0); eq((await H.lastOrder(p)).status,'done'); await p.ctx.close(); });
 
 // ---- Sold out ----

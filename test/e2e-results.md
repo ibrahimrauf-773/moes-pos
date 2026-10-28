@@ -39,7 +39,7 @@
 | 37 | Void/Refund | Cashier can refund partial with reason; over-refund blocked | PASS |  |
 | 38 | Void/Refund | Voided orders excluded from report totals | PASS |  |
 | 39 | Kitchen | KDS shows ticket, no prices; late turns red at 20m; bump clears | PASS |  |
-| 40 | Kitchen | Kitchen staff: late timer, bump | PASS |  |
+| 40 | Kitchen | Kitchen staff: late timer; view-only by default; Ready (setting on) clears | PASS |  |
 | 41 | Menu | Owner marks item sold out; cashier cannot add | PASS |  |
 | 42 | Menu | Owner edits price; new price used | PASS |  |
 | 43 | Business date | Sale at 01:30 PKT counts toward previous date | PASS |  |

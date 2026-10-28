@@ -54,7 +54,7 @@ export const STAFF=[
  {id:'shaheer',name:'Shaheer',role:'owner',pin:'1111'},{id:'ibrahim',name:'Ibrahim',role:'owner',pin:'2222'},{id:'ruqaiya',name:'Ruqaiya',role:'owner',pin:'3333'},
  {id:'waqar',name:'Waqar',role:'cashier',pin:'4444'},{id:'shan',name:'Shan',role:'kitchen',pin:'5555'},{id:'amir',name:'Amir',role:'kitchen',pin:'6666'},
  {id:'ayesha',name:'Ayesha',role:'stock',pin:'7777'}];
-export const POLICY={staffMealPct:30,cashierMaxDiscountPct:10,cashierCanRefund:true,amberMinutes:12,lateMinutes:20,focApprovers:['waqar'],fpCommissionPct:23,gstOn:false,gstPct:0};
+export const POLICY={kdsButtons:false,staffMealPct:30,cashierMaxDiscountPct:10,cashierCanRefund:true,amberMinutes:12,lateMinutes:20,focApprovers:['waqar'],fpCommissionPct:23,gstOn:false,gstPct:0};
 export const EXPENSE_CODES=[
  ['5000','Chicken/Poultry'],['5010','Produce'],['5020','Dry Goods'],['5030','Dairy'],['5040','Bread & Bakery'],['5050','Oil & Spices'],['5100','Beverage Cost'],['5200','Packaging & To-Go'],
  ['6000','Payroll'],['6100','Rent'],['6200','Electric'],['6210','Gas'],['6220','Water'],['6230','Internet & Phone'],['6300','Delivery App Fees'],['6320','Bank Fees'],['6330','Delivery & Transport'],
@@ -131,3 +131,12 @@ export const USAGE={
  combo1:[['lp24',1,true],['dinner_rolls',1]], combo2:[['lp24',1,true]], combo3:[['lp24',1,true]], mozz:[['lp24',1,true]], loaded_fries:[['lp24',1,true]],
  _order:[['takeaway_bags',1,true]],
 };
+
+// ---- Online orders (Supabase project moes-online-orders). URL + anon key are PUBLIC (same as the website);
+// access to orders requires signing in as the POS auth user (password entered once in Settings, never bundled).
+export const ONLINE_DEFAULT={url:'https://qviqafndnhwpwnaqhfya.supabase.co',anonKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2aXFhZm5kbmh3cHduYXFoZnlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxODYzMTEsImV4cCI6MjEwODc2MjMxMX0.CUXZlvl2IXCj7DARIsDdgBXqJVRf_pG8X7FBtHCHC1s',email:'pos@moes.local',pollMs:20000};
+// Website item_id -> POS store menu id
+export const WEB_ITEM_MAP={combo_1:'combo1',combo_2:'combo2',combo_3:'combo3',loaded_fries:'loaded_fries',mozzarella_sticks_3:'mozz',mac_n_cheese:'mac',
+  addon_dinner_roll:'dinner_roll',addon_extra_sauce:'moes_sauce',addon_hot_honey:'hot_honey',drink_baja_blast:'baja',drink_lemonade:'lemonade',drink_arizona_iced_tea:'arizona',dessert_glazed_donut:'donut'};
+export const POS_TO_WEB=Object.fromEntries(Object.entries(WEB_ITEM_MAP).map(([w,p])=>[p,w]));
+export const EXTRA_PAY_NAMES={rider_fare:'Rider fare (kept by Speedway)',speedway_due:'Speedway owes (pays later)',pay_later:'Pay Later'};

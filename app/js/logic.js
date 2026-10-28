@@ -24,6 +24,7 @@ export function computeTotals(o, settings={}){
   const gst = settings.gstOn ? Math.round(taxable*(settings.gstPct||0)/100) : 0;
   let total=taxable+delivery+gst; if(d?.kind==='foc'){ total=0; }
   if(o.channel==='foodpanda' && o.fp?.total!=null) total=o.fp.total; // FP totals are authoritative
+  if(o.channel==='website' && o.web?.total!=null) total=o.web.total; // server-recomputed website total is authoritative
   return {subtotal,discount,delivery,gst,total};
 }
 export const paid=o=>(o.payments||[]).reduce((a,p)=>a+(p.amount||0),0);
@@ -102,6 +103,9 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
   r.dues={newCredit:counted.reduce((a,o)=>a+due(o,policy),0),creditOrders:counted.filter(o=>due(o,policy)>0).map(o=>({orderNo:o.orderNo,name:o.customer?.name||'',phone:o.customer?.phone||'',due:due(o,policy)})),collected:0,collectedList:[],outstanding};
   for(const p of settlements){ (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount; r.dues.collected+=p.amount; r.dues.collectedList.push(p); }
   for(const o of counted) for(const p of o.payments||[]) if(p.settle&&p.bd===o.businessDate){ r.dues.collected+=p.amount; r.dues.collectedList.push({...p,orderNo:o.orderNo,name:o.customer?.name}); }
+  // Speedway rider settlements for orders of this business date (cash counts in the drawer only once received)
+  r.speedway={orders:counted.filter(o=>o.rider).map(o=>({orderNo:o.orderNo,zone:o.delivery?.zone,collect:o.rider.collect,fare:o.rider.fare,amount:o.rider.amount,method:o.rider.method,settledAt:o.rider.settledAt||null,settledVia:o.rider.settledVia||null})),pendingTonight:0,outstanding:null};
+  r.speedway.pendingTonight=r.speedway.orders.filter(x=>x.method==='later'&&!x.settledAt).reduce((a,x)=>a+x.amount,0);
   r.fp.commissionEst=Math.round(r.fp.gross*r.fp.commissionPct/100); r.fp.payoutEst=r.fp.gross-r.fp.commissionEst;
   r.fp.actualPayout = shift?.fpPayout ?? null; r.fp.payoutBatch = shift?.fpPayoutBatch ?? '';
   let cashExp=0, nonExp=0;
@@ -204,3 +208,45 @@ export function speedwayText(o,policy,zones=[]){ const t=computeTotals(o,policy)
    `Area/Zone: ${z?z.name+(z.areas?' ('+String(z.areas).split(',')[0].trim()+')':''):(o.delivery?.zone||'-')}`,`Order #: ${o.orderNo??'-'}`,
    `Amount to collect: Rs ${collect}`,`Payment: ${collect>0?'COD':'Paid'}`,`Notes: ${String(o.note||'').replace(/\s+/g,' ').trim()||'-'}`].join('\n'); }
 export const isDelivery=o=>!!(o.delivery||o.channel==='whatsapp'||o.channel==='website'||o.channel==='phone'||o.type==='delivery');
+
+// ---------- Order status workflow (delivery: website / WhatsApp / phone; pickup: website pickup) ----------
+// DB values match online_orders.status. 'ready' = Waiting for rider (delivery) / Ready for pickup.
+export const FLOW_DELIVERY=['received','accepted','preparing','ready','out_for_delivery','delivered'];
+export const FLOW_PICKUP=['received','accepted','preparing','ready','delivered'];
+export const hasFlow=o=>!!o.flow;
+export const isPickup=o=>o.flow?.kind==='pickup';
+export function flowLabel(o,s=o.flow?.status){ const p=isPickup(o);
+  return ({received:'New (not accepted)',accepted:'Accepted',preparing:'Preparing',ready:p?'Ready for pickup':'Waiting for rider',out_for_delivery:'Dispatched',delivered:p?'Picked up':'Delivered',cancelled:'Cancelled'})[s]||s; }
+export function nextStatus(o){ const s=o.flow?.status; if(!s||s==='cancelled') return null; const seq=isPickup(o)?FLOW_PICKUP:FLOW_DELIVERY; const i=seq.indexOf(s); return i>=0&&i<seq.length-1?seq[i+1]:null; }
+export function nextLabel(o){ const n=nextStatus(o); if(!n) return null; const p=isPickup(o);
+  return ({accepted:'Accept',preparing:'Start preparing',ready:p?'Ready for pickup':'Ready – waiting for rider',out_for_delivery:'Dispatch (rider left)',delivered:p?'Picked up':'Delivered'})[n]; }
+// Speedway rider fare by zone (what the rider keeps). Zone table riderFare wins when edited.
+export const SPEEDWAY_FARES={A:200,B:300,C:360,D:460,E:560,F:660,G:760,H:860,I:960};
+export const riderFare=(o,zones=[])=>{ const z=zones.find(z=>z.id===o.delivery?.zone); return o.delivery?.riderFare??z?.riderFare??SPEEDWAY_FARES[o.delivery?.zone]??0; };
+// What the rider collects from the customer: unpaid balance (COD). Prepaid by bank -> 0.
+export function riderCollect(o,policy={}){ return due(o,policy); }
+// What the rider owes the shop at dispatch: collected minus his fare (never below 0).
+export function riderAmount(o,policy={},zones=[]){ const c=riderCollect(o,policy); return c>0?Math.max(0,c-riderFare(o,zones)):0; }
+// Speedway receivables: dispatched orders where the rider 'pays later' and hasn't settled.
+export const speedwayPending=orders=>orders.filter(o=>isCounted(o)&&o.rider?.method==='later'&&!o.rider.settledAt).map(o=>({id:o.id,orderNo:o.orderNo,businessDate:o.businessDate,zone:o.delivery?.zone,amount:o.rider.amount,at:o.rider.at}));
+// Customer WhatsApp messages (copy fallback while automation is down)
+export function customerMsg(o,kind,shop="Moe's Hot Chicken"){ const c=o.customer||{}; const nm=(c.name||'').split(' ')[0]||'there'; const no='#'+(o.orderNo??''); const t=computeTotals(o).total;
+  const ref=o.web?.ref?` (${o.web.ref})`:'';
+  return ({accepted:`Hi ${nm}! ${shop} has accepted your order ${no}${ref}. Total: Rs ${t}. We're firing it up now 🔥`,
+    ready:isPickup(o)?`Hi ${nm}, your order ${no}${ref} is ready for pickup at ${shop}!`:`Hi ${nm}, your order ${no}${ref} is packed and waiting for the rider.`,
+    out_for_delivery:`Hi ${nm}, your order ${no}${ref} is on the way! ${due(o)>0?`Please keep Rs ${due(o)} ready for the rider.`:'It is already paid.'}`,
+    delivered:isPickup(o)?`Thanks ${nm}! Enjoy your order ${no} from ${shop} 🔥`:`Hi ${nm}, your order ${no}${ref} has been delivered. Enjoy the heat! 🔥 – ${shop}`})[kind]||''; }
+export const MSG_AT={accepted:'accepted',ready:'ready',out_for_delivery:'out_for_delivery',delivered:'delivered'};
+// Website order (online_orders row) -> POS order fields (lines/discount/delivery/payments/customer). webToPos maps item ids.
+export function webOrderToPos(w,{webToPos={},zones=[]}={}){ const c=w.customer||{};
+  const lines=(w.items||[]).map(i=>({itemId:webToPos[i.item_id]||i.item_id,webItemId:i.item_id,name:i.name,qty:i.qty||1,unitPrice:i.unit_price||0,heat:i.spice_level||null,note:i.notes||'',
+    addons:(i.modifiers||[]).map(m=>({id:webToPos[m.item_id]||m.item_id,name:m.name,price:m.price||0}))}));
+  const z=zones.find(z=>z.id===c.zone);
+  const bank={bank_hbl:'hbl',bank_bahl:'bah'}[w.payment_method];
+  return {id:'web-'+w.id,channel:'website',type:w.order_type==='pickup'?'takeaway':'delivery',lines,note:[w.notes,c.landmark&&('Landmark: '+c.landmark),c.map_pin_url&&('Pin: '+c.map_pin_url),w.scheduled_for&&('PRE-ORDER for '+fmtDT(Date.parse(w.scheduled_for)))].filter(Boolean).join(' | '),
+    discount:w.discount_amount?{kind:'customer',type:'amt',value:w.discount_amount,reason:`Website ${w.discount_pct}%`,approvedBy:'website'}:null,
+    customer:{name:c.name||'',phone:normPhone(c.phone),address:c.address||'',landmark:c.landmark||'',area:c.area||''},
+    delivery:w.order_type==='delivery'?{zone:c.zone,charge:w.delivery_fee||0,riderFare:z?.riderFare??SPEEDWAY_FARES[c.zone]??0}:null,
+    payments:bank?[{method:bank,amount:w.total,at:Date.parse(w.created_at),by:'website',ref:'website transfer',verified:!!w.payment_verified,web:true}]:[],
+    unpaid:!bank, web:{id:w.id,ref:w.website_ref,total:w.total,payment_method:w.payment_method,proof:w.payment_proof_url||null,verified:!!w.payment_verified,created_at:w.created_at},
+    flow:{kind:w.order_type==='pickup'?'pickup':'delivery',status:w.status,ts:Object.fromEntries(Object.entries(w.status_timestamps||{}).map(([k,v])=>[k,Date.parse(v)]))}}; }

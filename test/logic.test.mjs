@@ -24,4 +24,19 @@ const orders=bk.orders.map(b=>L.backlogToOrder(b,S.MENUS,S.ZONES)); const per={}
 for(const x of orders){const k=x.businessDate; per[k]??={orders:0,gross:0,fp:0,wa:0}; per[k].orders++; const g=L.computeTotals(x,{}).total; per[k].gross+=g; per[k][x.channel==='foodpanda'?'fp':'wa']+=g;}
 console.table(per); console.log('total',orders.length,Object.values(per).reduce((a,v)=>a+v.gross,0));
 assert.ok(!JSON.stringify(orders).match(/1600|1601|1602/)||true);
+// ---- order flow ----
+assert.deepEqual(L.FLOW_DELIVERY,['received','accepted','preparing','ready','out_for_delivery','delivered']);
+const fd={flow:{kind:'delivery',status:'ready'}}; assert.equal(L.nextStatus(fd),'out_for_delivery'); assert.match(L.flowLabel(fd),/Waiting for rider/);
+const fp={flow:{kind:'pickup',status:'ready'}}; assert.equal(L.nextStatus(fp),'delivered'); assert.match(L.flowLabel(fp),/Ready for pickup/); assert.match(L.flowLabel({flow:{kind:'pickup',status:'delivered'}}),/Picked up/);
+assert.equal(L.nextStatus({flow:{kind:'delivery',status:'delivered'}}),null);
+for(const [z,f] of Object.entries({A:200,B:300,C:360,D:460,E:560,F:660,G:760,H:860,I:960})) assert.equal(L.SPEEDWAY_FARES[z],f);
+const cod={channel:'website',type:'delivery',lines:[{itemId:'combo1',qty:1,unitPrice:1099,addons:[]}],delivery:{zone:'C',charge:200},web:{total:1299},payments:[]};
+assert.equal(L.riderCollect(cod,{}),1299); assert.equal(L.riderAmount(cod,{},[]),1299-360);
+const pre={...cod,payments:[{method:'hbl',amount:1299}]}; assert.equal(L.riderCollect(pre,{}),0); assert.equal(L.riderAmount(pre,{},[]),0);
+const w={id:'u1',website_ref:'MHC-1',order_type:'delivery',status:'received',status_timestamps:{received:'2026-10-28T10:00:00Z'},created_at:'2026-10-28T10:00:00Z',customer:{name:'A',phone:'03001234567',zone:'A'},items:[{item_id:'combo_1',name:'Combo 1',qty:1,unit_price:1099,modifiers:[{item_id:'addon_hot_honey',name:'Hot Honey',price:100}]}],delivery_fee:200,total:1399,payment_method:'cod'};
+const m=L.webOrderToPos(w,{webToPos:S.WEB_ITEM_MAP,zones:[]}); assert.equal(m.id,'web-u1'); assert.equal(m.lines[0].itemId,'combo1'); assert.equal(m.lines[0].addons[0].id,'hot_honey'); assert.equal(m.unpaid,true); assert.equal(m.delivery.riderFare,200); assert.equal(m.flow.status,'received');
+assert.equal(L.computeTotals(m,{}).total,1399);
+const mb=L.webOrderToPos({...w,payment_method:'bank_bahl'},{webToPos:S.WEB_ITEM_MAP}); assert.equal(mb.payments[0].method,'bah');
+for(const k of ['accepted','ready','out_for_delivery','delivered']){ const t=L.customerMsg({...m,orderNo:'1700',flow:{...m.flow,status:k}},L.MSG_AT[k]); assert.ok(t.includes('1700'),k); }
+assert.equal(L.speedwayPending([{status:'done',rider:{method:'later',amount:500,settledAt:null}},{status:'done',rider:{method:'later',amount:300,settledAt:1}}]).reduce((a,x)=>a+x.amount,0),500);
 console.log('ALL LOGIC TESTS PASSED');
