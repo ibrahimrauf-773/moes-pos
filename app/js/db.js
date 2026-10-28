@@ -1,7 +1,7 @@
 // Tiny IndexedDB wrapper. All data lives on the device; sync is optional.
-const DB_NAME='moes-pos', VER=1;
-export const STORES=['kv','orders','menus','zones','staff','inventory','stockMoves','expenses','shifts','customers','log','backups','secure','printJobs'];
-export const SYNCED=['orders','menus','zones','staff','inventory','stockMoves','expenses','shifts','customers','log'];
+const DB_NAME='moes-pos', VER=2;
+export const STORES=['kv','orders','menus','zones','staff','inventory','stockMoves','expenses','shifts','customers','log','backups','secure','printJobs','invLogs'];
+export const SYNCED=['orders','menus','zones','staff','inventory','stockMoves','expenses','shifts','customers','log','invLogs'];
 let dbp;
 export function open(){ return dbp ??= new Promise((res,rej)=>{ const r=indexedDB.open(DB_NAME,VER);
   r.onupgradeneeded=()=>{ const db=r.result; for(const s of STORES) if(!db.objectStoreNames.contains(s)) db.createObjectStore(s,{keyPath:'id'}); };

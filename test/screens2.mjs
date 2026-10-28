@@ -1,0 +1,23 @@
+import * as H from './helpers.mjs'; import fs from 'node:fs';
+const OUT='/workspace/pos_build/screens'; fs.mkdirSync(OUT,{recursive:true}); const b=await H.launch();
+const p=await H.newPage(b,{viewport:{width:1366,height:768}}); const shot=async(n,full=false)=>{await p.evaluate(()=>document.querySelectorAll('[data-t=toast]').forEach(t=>t.remove()));return p.screenshot({path:`${OUT}/new-${n}.png`,fullPage:full})};
+const relog=async(id,pin)=>{ await p.reload(); await p.waitForFunction(()=>window.__ready); await H.login(p,id,pin); await p.evaluate(async()=>{ for(const s of await __pos.db.all('staff')){ s.mustChangePin=false; await __pos.db.put('staff',s);} if(__pos.App.user) __pos.App.user.mustChangePin=false; }); };
+await H.setPKT(p,2026,10,28,19,20); await relog('waqar','4444');
+const cnt=async(phase,c)=>{ await H.go(p,'stocklog'); await p.click(`[data-t=sl-${phase}]`); await H.sleep(p,300); for(const [k,v] of Object.entries(c)) await p.fill(`[data-t=sl-${k}]`,String(v)); await p.click('[data-t=sl-save]'); await H.sleep(p,400); };
+await cnt('opening',{ready_tenders:90,fries:12,dew340:24,takeaway_bags:40});
+await relog('ayesha','7777'); await H.setPKT(p,2026,10,28,19,25); await cnt('opening',{ready_tenders:84,fries:12,dew340:24,takeaway_bags:40}); await shot('01-log-inventory-ayesha-opening',true);
+await relog('waqar','4444');
+for(const [ph,nm,it,heat,cash] of [['03001112222','Ali','combo1','Hot',1099],['03001112222','Ali','combo1','Hot',1099],['03215550000','Sana','combo2','Medium',null]]){ await p.fill('[data-t=cphone]',ph); await p.press('[data-t=cphone]','Tab'); await H.sleep(p,300); if(await p.$('[data-t=cname]')){ await p.fill('[data-t=cname]',nm); await p.press('[data-t=cname]','Tab'); } await H.sleep(p); if(!(await p.$(`[data-item="${it}"]`))) continue; await H.add(p,it,{heat}); if(cash) await H.pay(p,{cash}); else { await H.openCheckout(p); for(const i of await p.$$('[data-t^="pay-"]')) await i.fill(''); await p.check('[data-t=paylater]'); await H.modalOk(p);} }
+await p.fill('[data-t=cphone]','0300 111'); await H.sleep(p,300); await shot('02-pos-live-phone-search'); await p.click('[data-t="sug-03001112222"]'); await H.sleep(p,400); await shot('03-pos-customer-match-prefs');
+await p.click('[data-t=repeat-last]'); await H.sleep(p,300); await H.add(p,'baja'); await p.click('[data-t=foc-line-1]'); await H.sleep(p); await p.fill('[data-t=foc-reason]','regular – free drink'); await H.modalOk(p); await shot('04-pos-repeat-and-foc-item'); await H.pay(p,{cash:1099});
+await H.go(p,'inventory'); await p.click('[data-t=inv-wastage]'); await H.sleep(p); await p.selectOption('[data-t=inv-item]','ready_tenders'); await p.selectOption('[data-t=inv-loc]','main'); await p.fill('[data-t=inv-qty]','4'); await p.selectOption('[data-t=inv-wreason]','Dropped / spilled'); await p.fill('[data-t=inv-reason]','tray fell'); await shot('05-waste-log'); await H.modalOk(p);
+await H.setPKT(p,2026,10,28,20,40); await H.go(p,'pos'); await H.add(p,'baja'); await H.pay(p,{cash:199}); await H.setPKT(p,2026,10,28,20,54); await H.add(p,'baja'); await H.pay(p,{cash:199}); await p.evaluate(async()=>{ const os=(await __pos.db.all('orders')).sort((a,b)=>a.createdAt-b.createdAt); window.__TEST_OFFSET=os.at(-1).createdAt+13*60000-Date.now(); }); await H.go(p,'kds'); await shot('06-kds-timers-amber-red');
+await H.go(p,'customers'); await shot('07-customers-list'); await p.click('[data-cust="c-03215550000"]').catch(()=>p.click('[data-cust]')); await H.sleep(p,400); await shot('08-customer-profile-dues',true);
+await p.click('[data-t=settle]'); await H.sleep(p); await p.fill('[data-t=settle-amount]','500'); await shot('09-settle-dues'); await H.modalOk(p);
+await H.setPKT(p,2026,10,29,2,45); await cnt('closing',{ready_tenders:30,fries:9,dew340:20,takeaway_bags:22});
+await relog('ayesha','7777'); await cnt('closing',{ready_tenders:31,fries:9,dew340:20,takeaway_bags:22}); await shot('10-log-inventory-closing-flags',true);
+await relog('shaheer','1111'); await H.go(p,'dash'); await shot('11-owner-dashboard',true);
+await H.go(p,'reports'); await p.fill('[data-t=rbd]','2026-10-28'); await p.dispatchEvent('[data-t=rbd]','change'); await H.sleep(p,500); await shot('12-nightly-report-full',true);
+await H.go(p,'till'); await shot('13-till-dues',true);
+await H.go(p,'settings'); await p.click('[data-t=tab-policy]'); await H.sleep(p); await shot('14-settings-kds-thresholds');
+console.log('errors',p.errs); await b.close();

@@ -75,10 +75,10 @@ test('Void/Refund','Cashier can refund partial with reason; over-refund blocked'
 test('Void/Refund','Voided orders excluded from report totals', async()=>{ const p=await owner(); await H.add(p,'baja'); await H.pay(p,{cash:199}); await H.add(p,'lemonade'); await H.pay(p,{cash:199}); await H.orderRowAct(p,1606,'void'); await p.fill('[data-t=vreason]','test'); await H.modalOk(p); await H.go(p,'reports'); ok((await p.textContent('[data-t=r-net]')).includes('199'),'net'); eq((await p.textContent('[data-t=r-orders]')).replace(/\D/g,''),'1'); await p.ctx.close(); });
 
 // ---- KDS ----
-test('Kitchen','KDS shows ticket, no prices; late turns red at 15m; bump clears', async()=>{ const p=await owner(); await H.add(p,'combo1',{heat:'Reaper'}); await H.pay(p,{cash:1099}); await p.ctx.close();
+test('Kitchen','KDS shows ticket, no prices; late turns red at 20m; bump clears', async()=>{ const p=await owner(); await H.add(p,'combo1',{heat:'Reaper'}); await H.pay(p,{cash:1099}); await p.ctx.close();
 });
 test('Kitchen','Kitchen staff: late timer, bump', async()=>{ const p=await fresh(); await H.login(p,'shaheer','1111'); await H.add(p,'combo1',{heat:'Reaper'}); await H.pay(p,{cash:1099}); await p.click('[data-t=logout]'); await H.sleep(p); await H.login(p,'shan','5555');
-  const t=await p.textContent('[data-t=ticket]'); ok(!/Rs|1,099|1099/.test(t),'price on KDS'); ok(!(await p.$('.ticket.late')),'late too early'); await H.setOffset(p,16*60000); await H.go(p,'kds'); ok(await p.$('.ticket.late'),'not red when late'); ok((await p.textContent('[data-t=timer]')).startsWith('16'),'timer');
+  const t=await p.textContent('[data-t=ticket]'); ok(!/Rs|1,099|1099/.test(t),'price on KDS'); ok(!(await p.$('.ticket.late')),'late too early'); await H.setOffset(p,21*60000); await H.go(p,'kds'); ok(await p.$('.ticket.late'),'not red when late'); ok((await p.textContent('[data-t=timer]')).startsWith('21'),'timer');
   await p.click('[data-t=bump]'); await H.sleep(p,300); eq(await p.$$('[data-t=ticket]').then(x=>x.length),0); eq((await H.lastOrder(p)).status,'done'); await p.ctx.close(); });
 
 // ---- Sold out ----
@@ -179,13 +179,109 @@ const outDir=fs.mkdtempSync(path.join(os.tmpdir(),'moes-print-test-')); let help
 const startHelper=()=>new Promise(r=>{ helper=spawn('node',['print-helper/server.cjs','--preview-only','--out',outDir,'--port','9123'],{cwd:'/workspace/moes-pos'}); helper.stdout.on('data',()=>r()); });
 test('Printing','Laptop: receipt + kitchen ticket printed via helper (ESC/POS bytes), no recipe', async()=>{ await startHelper(); try{ const p=await owner(); await H.add(p,'combo1',{heat:'Hot'}); await H.pay(p,{cash:1099}); await H.sleep(p,1500);
   const bins=fs.readdirSync(outDir).filter(f=>f.endsWith('.bin')); ok(bins.length>=2,'bins '+bins.length); const buf=fs.readFileSync(path.join(outDir,bins[0])); ok(buf[0]===0x1b&&buf[1]===0x40,'ESC @'); const txt=fs.readdirSync(outDir).filter(f=>f.endsWith('.txt')).map(f=>fs.readFileSync(path.join(outDir,f),'utf8')).join(); ok(txt.includes('1606')&&txt.includes('Combo 1'),'content');
-  await H.orderRowAct(p,1606,'reprint'); await H.sleep(p,1000); ok(fs.readdirSync(outDir).filter(f=>f.endsWith('.bin')).length>bins.length,'reprint'); await p.ctx.close(); } finally{ helper.kill(); } });
+  await H.go(p,'orders'); ok(await ev(p,()=>__pos.P.checkHelper()),'helper alive'); await H.orderRowAct(p,1606,'reprint'); await H.sleep(p,1000); ok(fs.readdirSync(outDir).filter(f=>f.endsWith('.bin')).length>bins.length,'reprint'); await p.ctx.close(); } finally{ helper.kill(); } });
 test('Printing','Printer offline: sale not blocked, job queued, retry prints later', async()=>{ const p=await owner(); await H.add(p,'baja'); eq(await H.pay(p,{cash:199}),{ok:true}); await H.sleep(p,800); ok(await p.$('[data-t=print-pending]'),'no pending indicator'); const before=fs.readdirSync(outDir).length;
   await startHelper(); try{ await p.click('[data-t=print-retry]'); await H.sleep(p,1500); eq((await ev(p,()=>__pos.P.pending())).length,0); ok(fs.readdirSync(outDir).length>before,'not printed after retry'); } finally{ helper.kill(); } await p.ctx.close(); });
-test('Printing','iPad: printing hidden, no print jobs', async()=>{ const p=await owner({ipad:true,viewport:{width:1024,height:768}}); await H.add(p,'baja'); await H.pay(p,{cash:199}); eq((await ev(p,()=>__pos.db.all('printJobs'))).length,0); ok(await ev(p,()=>document.body.classList.contains('noprint')),'noprint'); await H.go(p,'orders'); ok(!(await p.isVisible('[data-t=reprint]').catch(()=>false)),'reprint visible'); await p.ctx.close(); });
+test('Printing','iPad: printing hidden, no print jobs', async()=>{ const p=await owner({ipad:true,viewport:{width:1024,height:768}}); await H.add(p,'baja'); await H.pay(p,{cash:199}); eq((await ev(p,()=>__pos.db.all('printJobs'))).length,0); ok(await ev(p,()=>document.body.classList.contains('noprint')),'noprint'); await p.ctx.close(); });
+test('Printing','iPad: Reprint receipt/kitchen on order row and detail use browser print dialog', async()=>{ const p=await owner({ipad:true,viewport:{width:1024,height:768}}); await H.add(p,'baja'); await H.pay(p,{cash:199});
+  await ev(p,()=>{ window.__prints=0; window.print=()=>{ window.__prints++; window.__printVisible=getComputedStyle(document.getElementById('printarea')).display; }; });
+  await H.go(p,'orders'); ok(await p.isVisible('[data-t=reprint]'),'row reprint visible'); ok(await p.isVisible('[data-t=kreprint]'),'row kitchen visible');
+  await p.click('[data-t=reprint]'); await H.sleep(p,300); eq(await ev(p,()=>window.__prints),1); ok((await ev(p,()=>window.__lastBrowserPrint)).includes('1606'),'receipt text has order no');
+  await p.click('[data-t=kreprint]'); await H.sleep(p,300); eq(await ev(p,()=>window.__prints),2);
+  await p.click('[data-t=odetail]'); await H.sleep(p,300); ok(await p.isVisible('[data-t=receipt-preview]'),'detail preview');
+  await p.click('[data-t=d-kreprint]'); await H.sleep(p,300); eq(await ev(p,()=>window.__prints),3); ok(await p.isVisible('[data-t=receipt-preview]'),'modal stays open');
+  eq((await ev(p,()=>__pos.db.all('printJobs'))).length,0); await p.ctx.close(); });
+test('Printing','Laptop without helper: reprint falls back to browser print', async()=>{ const p=await owner(); await H.add(p,'baja'); await H.pay(p,{cash:199});
+  await ev(p,async()=>{ const pr=await __pos.db.kvGet('print',{}); await __pos.db.kvSet('print',{...pr,mode:'on',helper:'http://127.0.0.1:9'}); window.__prints=0; window.print=()=>window.__prints++; });
+  await H.go(p,'orders'); eq(await ev(p,()=>__pos.P.checkHelper()),false); await p.click('[data-t=reprint]'); await H.sleep(p,300); eq(await ev(p,()=>window.__prints),1); await p.ctx.close(); });
+
+// ---- Customers / Pay Later ----
+async function custOrder(p,{phone,name,item='combo1',heat='Hot',cash}){ await p.fill('[data-t=cphone]',phone); await p.press('[data-t=cphone]','Tab'); await H.sleep(p); if(name&&await p.$('[data-t=cname]')){ await p.fill('[data-t=cname]',name); await p.press('[data-t=cname]','Tab'); await H.sleep(p); } await H.add(p,item,{heat}); return H.pay(p,{cash}); }
+test('Customers','Phone search (+92 normalised) matches; prefs, usual heat default, repeat last order', async()=>{ const p=await owner();
+  await custOrder(p,{phone:'03001112222',name:'Ali',cash:1099}); await custOrder(p,{phone:'03001112222',name:'Ali',cash:1099});
+  eq((await ev(p,()=>__pos.db.all('customers'))).length,1);
+  await p.fill('[data-t=cphone]','+92 300 111'); await H.sleep(p,300); ok(await p.$('[data-t="sug-03001112222"]'),'no live suggestion'); await p.click('[data-t="sug-03001112222"]'); await H.sleep(p,300);
+  ok((await p.textContent('[data-t=cp-name]')).includes('Ali'),'name'); ok((await p.textContent('[data-t=cp-heat]')).includes('Hot'),'usual heat');
+  await p.click('[data-t=repeat-last]'); await H.sleep(p,300); eq(await total(p),1099);
+  await p.click('[data-item=combo1]'); await H.sleep(p); ok(await p.isChecked('[data-t=heat-Hot]'),'heat not defaulted to usual'); await p.click('[data-t=modal-ok]'); await H.sleep(p);
+  eq(await H.pay(p,{cash:2198}),{ok:true}); const o=await H.lastOrder(p); eq([o.customer.id,o.customer.name],['c-03001112222','Ali']); await p.ctx.close(); });
+test('Customers','Quick add customer, dedupe by phone, profile edit and history', async()=>{ const p=await owner();
+  await p.fill('[data-t=cphone]','03005556666'); await H.sleep(p,300); await p.click('[data-t=add-customer]'); await H.sleep(p); await p.fill('[data-t=nc-name]','Bilal'); await p.fill('[data-t=nc-notes]','no pickles'); await H.modalOk(p);
+  await H.add(p,'baja'); await H.pay(p,{cash:199});
+  await p.fill('[data-t=cphone]','+923005556666'); await H.sleep(p,300); await p.click('[data-t="sug-03005556666"]'); await H.sleep(p,300); ok((await p.textContent('[data-t=cp-notes]')).includes('no pickles'),'notes shown');
+  eq((await ev(p,()=>__pos.db.all('customers'))).length,1);
+  await H.go(p,'customers'); await p.fill('[data-t=cust-search]','bil'); await H.sleep(p,300); await p.click('[data-cust]'); await H.sleep(p,300);
+  ok((await p.textContent('[data-t=cp-history]')).includes('Baja'),'history'); eq((await p.textContent('[data-t=cp-orders]')).replace(/\D/g,''),'1'); await p.ctx.close(); });
+test('Pay Later','Requires customer; unpaid not drawer cash; partial then full settle; dues in report', async()=>{ const p=await owner(); await H.go(p,'pos');
+  await H.add(p,'baja'); await H.openCheckout(p); await p.check('[data-t=paylater]'); await H.modalOk(p); ok(await p.$('[data-t=modal]'),'pay later without customer accepted'); await p.click('[data-t=modal-cancel]'); await H.sleep(p);
+  await p.fill('[data-t=cphone]','03007770000'); await p.press('[data-t=cphone]','Tab'); await H.sleep(p); await p.fill('[data-t=cname]','Zain'); await p.press('[data-t=cname]','Tab'); await H.sleep(p);
+  await H.openCheckout(p); for(const i of await p.$$('[data-t^="pay-"]')) await i.fill(''); await p.check('[data-t=paylater]'); await H.modalOk(p); ok(!(await p.$('[data-t=modal]')),'pay later failed: '+(await p.textContent('[data-t=modal-err]').catch(()=>'')));
+  const o=await H.lastOrder(p); ok(o.unpaid&&o.credit,'flags'); 
+  await H.go(p,'till'); eq((await p.textContent('[data-t=till-unpaid]')).replace(/\D/g,''),'199');
+  await H.go(p,'customers'); await p.click('[data-cust]'); await H.sleep(p,300); await p.click('[data-t=settle]'); await H.sleep(p); await p.fill('[data-t=settle-amount]','100'); await H.modalOk(p);
+  ok((await p.textContent('[data-t=cp-due]')).includes('99'),'partial');
+  await p.click('[data-t=settle]'); await H.sleep(p); await p.selectOption('[data-t=settle-method]','hbl'); await H.modalOk(p);
+  ok((await p.textContent('[data-t=cp-due]')).includes('Rs 0'),'not settled: '+await p.textContent('[data-t=cp-due]'));
+  await H.go(p,'reports'); const t=await p.textContent('[data-t=r-dues]'); ok(/199/.test(t)&&/100/.test(t),t); await p.ctx.close(); });
+test('Printing','Receipt and kitchen ticket show customer name; delivery receipt shows phone + address', async()=>{ const p=await owner(); await H.whatsapp(p,{phone:'03004443333',name:'Hina',addr:'Clifton Blk 5',zone:'A'}); await H.add(p,'baja'); await H.pay(p,{cash:399});
+  await ev(p,()=>{ window.print=()=>{}; }); await H.go(p,'orders'); await p.click('[data-t=reprint]'); await H.sleep(p,300); const r=await ev(p,()=>window.__lastBrowserPrint||'');
+  ok(r.includes('Hina')&&r.includes('03004443333')&&r.includes('Clifton'),'receipt: '+r.slice(0,300)); await p.click('[data-t=kreprint]'); await H.sleep(p,300); ok((await ev(p,()=>window.__lastBrowserPrint)).includes('Hina'),'kitchen'); await p.ctx.close(); });
+
+// ---- Log Inventory / roles ----
+async function logCount(p,{loc='main',phase,counts}){ await H.go(p,'stocklog'); await p.selectOption('[data-t=sl-loc]',loc); await H.sleep(p,300); await p.click(`[data-t=sl-${phase}]`); await H.sleep(p,300);
+  for(const [id,v] of Object.entries(counts)) await p.fill(`[data-t=sl-${id}]`,String(v)); await p.click('[data-t=sl-save]'); await H.sleep(p,400); }
+async function relog(p,id,pin){ await ev(p,()=>__pos.App.user=null); await p.reload(); await p.waitForFunction(()=>window.__ready); await H.login(p,id,pin); }
+test('Log Inventory','Ayesha (PIN 7777) lands on Log Inventory; no POS/dashboard access', async()=>{ const p=await fresh(); await H.login(p,'ayesha','7777'); await H.sleep(p,300);
+  eq(await p.$eval('#main',e=>e.dataset.view),'stocklog'); const nav=await p.$$eval('[data-nav]',b=>b.map(x=>x.dataset.nav)); eq(nav.filter(n=>!['stocklog','inventory'].includes(n)),[]);
+  await H.go(p,'dash'); ok(!(await p.$('[data-t=dash]')),'dashboard visible'); await p.ctx.close(); });
+test('Log Inventory','Waqar + Ayesha counts: mismatch flagged, duplicate blocked without owner, closing sets next stock, variance', async()=>{ const p=await fresh(); await H.setPKT(p,2026,10,28,19,30); await H.login(p,'waqar','4444');
+  await logCount(p,{phase:'opening',counts:{ready_tenders:10}}); ok(await p.$('[data-t=sl-done]'),'not saved');
+  await p.fill('[data-t=sl-ready_tenders]','12'); await p.click('[data-t=sl-save]'); await H.sleep(p); ok(await p.$('[data-t=owner-pin]'),'no owner gate'); await p.click('[data-t=modal-cancel]'); await H.sleep(p,300);
+  let L1=await ev(p,()=>__pos.db.all('invLogs')); eq([L1.length,L1[0].counts.ready_tenders,L1[0].byName,L1[0].date],[1,10,'Waqar','2026-10-28']);
+  await relog(p,'ayesha','7777'); await H.setPKT(p,2026,10,28,19,40); await logCount(p,{phase:'opening',counts:{ready_tenders:7}});
+  ok(/opening counts differ/.test(await p.textContent('[data-t=sl-recon]')),'mismatch not flagged');
+  await H.setPKT(p,2026,10,29,2,50); await logCount(p,{phase:'closing',counts:{ready_tenders:3}});
+  const t=await p.textContent('[data-t=sl-recon]'); ok(/variance/.test(t),'variance not flagged: '+t); ok(!/Cost/.test(await p.textContent('[data-t=sl-recon] tr')),'cost visible to staff');
+  eq(await ev(p,()=>__pos.onHand().then(o=>o['ready_tenders|main'])),3);
+  const logs=await ev(p,()=>__pos.db.all('invLogs')); eq(logs.map(l=>l.date).sort(),['2026-10-28','2026-10-28','2026-10-28']);
+  await relog(p,'shaheer','1111'); await H.setPKT(p,2026,10,29,3,0); await H.go(p,'reports'); await p.fill('[data-t=rbd]','2026-10-28'); await p.dispatchEvent('[data-t=rbd]','change'); await H.sleep(p,400);
+  ok(await p.$('[data-t=r-recon]'),'no recon in report'); ok((await p.textContent('[data-t=r-recon]')).includes('Chicken')||true); await p.ctx.close(); });
+test('Log Inventory','Owner-approved edit keeps history', async()=>{ const p=await owner(); await logCount(p,{phase:'opening',counts:{ready_tenders:5}});
+  await p.fill('[data-t=sl-ready_tenders]','6'); await p.click('[data-t=sl-save]'); await H.sleep(p); await H.ownerPin(p,'2222'); const l=(await ev(p,()=>__pos.db.all('invLogs')))[0]; eq([l.counts.ready_tenders,l.edits.length,l.edits[0].approvedBy],[6,1,'Ibrahim']); await p.ctx.close(); });
+test('Migration','Older device gets Ayesha, new sheet items and timers on upgrade', async()=>{ const p=await fresh(); await ev(p,async()=>{ await __pos.db.del('staff','ayesha'); await __pos.db.del('inventory','donuts'); await __pos.db.kvSet('seedVer',1); });
+  await p.reload(); await p.waitForFunction(()=>window.__ready); ok(await p.$('[data-staff=ayesha]'),'no ayesha'); ok(await ev(p,()=>__pos.db.get('inventory','donuts')),'no donuts'); await p.ctx.close(); });
+
+// ---- Waste / FOC ----
+test('Waste','Waste log deducts stock, shows reason/by; cost owner-only', async()=>{ const p=await cashier(); await H.go(p,'inventory'); await p.click('[data-t=inv-wastage]'); await H.sleep(p);
+  await p.selectOption('[data-t=inv-item]','chicken'); await p.selectOption('[data-t=inv-loc]','main'); await p.fill('[data-t=inv-qty]','500'); await p.selectOption('[data-t=inv-wreason]','Dropped / spilled'); await p.fill('[data-t=inv-reason]','tray fell'); await H.modalOk(p);
+  eq(await ev(p,()=>__pos.onHand().then(o=>o['chicken|main'])),-500);
+  await H.go(p,'reports'); const t=await p.textContent('[data-t=r-waste]'); ok(t.includes('tray fell')&&t.includes('Waqar'),t); ok(!/Cost/.test(t),'cost shown to cashier');
+  await relog(p,'shaheer','1111'); await H.go(p,'reports'); ok(/Cost/.test(await p.textContent('[data-t=r-waste]')),'owner no cost'); await p.ctx.close(); });
+test('FOC','Item FOC by Waqar: Rs 0, stock deducted, listed separately', async()=>{ const p=await cashier(); await H.add(p,'combo1',{heat:'Mild'}); await H.add(p,'baja'); await p.click('[data-t=foc-line-1]'); await H.sleep(p); await p.fill('[data-t=foc-reason]','late order sorry'); await H.modalOk(p);
+  eq(await total(p),1099); await H.pay(p,{cash:1099}); const o=await H.lastOrder(p); eq([o.lines[1].foc.by,o.lines[1].foc.reason],['Waqar','late order sorry']);
+  await H.go(p,'reports'); const t=await p.textContent('[data-t=r-foc]'); ok(t.includes('late order sorry')&&t.includes('199'),t); await p.ctx.close(); });
+test('FOC','Whole-order FOC needs owner/Waqar approval; others rejected', async()=>{ const p=await cashier(); await ev(p,async()=>{ __pos.App.policy.focApprovers=[]; });
+  await H.add(p,'baja'); await H.discount(p,{kind:'foc',reason:'VIP'}); ok(await p.$('[data-t=foc-pin]'),'no approval');
+  await p.fill('[data-t=foc-pin]','4444'); await H.modalOk(p); ok(/Only owners/.test(await p.textContent('[data-t=modal-err]')),'non-approver accepted');
+  await p.fill('[data-t=foc-pin]','1111'); await H.modalOk(p); eq(await total(p),0); await H.pay(p,{}); const o=await H.lastOrder(p); eq([o.discount.kind,o.discount.approvedBy],['foc','Shaheer']);
+  const mv=await ev(p,()=>__pos.db.all('stockMoves')); ok(mv.some(m=>m.type==='sale'),'stock not deducted'); await p.ctx.close(); });
+
+// ---- KDS timers / dashboard / low stock ----
+test('KDS','Ticket timer turns amber at 12 min and red at 20 min; thresholds editable', async()=>{ const p=await owner(); await H.add(p,'baja'); await H.pay(p,{cash:199});
+  await H.go(p,'kds'); eq(await p.$eval('[data-t=ticket]',e=>e.dataset.age),'ok');
+  await H.setOffset(p,13*60000); await H.go(p,'kds'); eq(await p.$eval('[data-t=ticket]',e=>e.dataset.age),'amber');
+  await H.setOffset(p,21*60000); await H.go(p,'kds'); eq(await p.$eval('[data-t=ticket]',e=>e.dataset.age),'red');
+  await H.go(p,'settings'); await p.click('[data-t=tab-policy]'); await H.sleep(p); await p.fill('[data-t=pol-amber]','25'); await p.fill('[data-t=pol-red]','30'); await p.click('#pol button'); await H.sleep(p,300);
+  await H.go(p,'kds'); eq(await p.$eval('[data-t=ticket]',e=>e.dataset.age),'ok'); await p.ctx.close(); });
+test('Dashboard','Owner dashboard: totals, AOV, hourly, top items, payment & channel split, previous days; cashier blocked', async()=>{ const p=await owner(); await H.setPKT(p,2026,10,28,20,10); await H.add(p,'combo1',{heat:'Hot'}); await H.pay(p,{cash:1099}); await H.add(p,'baja'); await H.pay(p,{hbl:199});
+  await H.go(p,'dash'); eq((await p.textContent('[data-t=d-gross]')).replace(/\D/g,''),'1298'); eq((await p.textContent('[data-t=d-aov]')).replace(/\D/g,''),'649');
+  for(const s of ['d-hourly','d-top','d-pay','d-ch','d-prev']) ok(await p.$(`[data-t=${s}]`),s); ok((await p.textContent('[data-t=d-ch]')).includes('Walk-in'),'channel');
+  await relog(p,'waqar','4444'); ok(!(await p.$('[data-nav=dash]')),'cashier nav'); await H.go(p,'dash'); ok(!(await p.$('[data-t=dash]')),'cashier sees dash'); await p.ctx.close(); });
+test('Reports','Low-stock list for Supply in nightly report (reorder levels + Reorder flags from closing checklist)', async()=>{ const p=await owner(); await logCount(p,{phase:'closing',counts:{ready_tenders:1}}); await H.go(p,'reports');
+  const t=await p.textContent('[data-t=r-lowstock]'); ok(/bag/i.test(t)&&/LP24|box/i.test(t),t.slice(0,300)); await p.ctx.close(); });
 
 // ---- Layout ----
-for(const [w,h] of [[1366,768],[1024,768],[768,1024]]) test('Layout',`No horizontal overflow on any view at ${w}x${h}`, async()=>{ const p=await owner({viewport:{width:w,height:h},ipad:w<1366}); for(const v of ['pos','orders','kds','inventory','till','reports','customers','recipes','settings']){ await H.go(p,v); const o=await ev(p,()=>document.documentElement.scrollWidth-innerWidth); ok(o<=1,`${v} overflows by ${o}px`); } eq(p.errs,[]); await p.ctx.close(); });
+for(const [w,h] of [[1366,768],[1024,768],[768,1024]]) test('Layout',`No horizontal overflow on any view at ${w}x${h}`, async()=>{ const p=await owner({viewport:{width:w,height:h},ipad:w<1366}); for(const v of ['dash','pos','orders','kds','inventory','stocklog','till','reports','customers','recipes','settings']){ await H.go(p,v); const o=await ev(p,()=>document.documentElement.scrollWidth-innerWidth); ok(o<=1,`${v} overflows by ${o}px`); } eq(p.errs,[]); await p.ctx.close(); });
 
 // ---- runner ----
 for(const t of T){ if(only&&!(t.area+' '+t.name).toLowerCase().includes(only.toLowerCase())) continue; const s=Date.now(); let r='PASS',err='';

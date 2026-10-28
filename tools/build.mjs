@@ -7,6 +7,8 @@ const BAD=/recipe|_PRIVATE|backlog_import|\.env|secret/i; const files=[];
 const h=crypto.createHash('sha256'); for(const f of files.sort()) h.update(f).update(fs.readFileSync(path.join(src,f)));
 const ver=h.digest('hex').slice(0,10);
 for(const f of files){ const d=path.join(out,f); fs.mkdirSync(path.dirname(d),{recursive:true}); let b=fs.readFileSync(path.join(src,f));
-  if(f==='sw.js') b=Buffer.from(b.toString().replace("const VERSION='dev'",`const VERSION='${ver}'`)); fs.writeFileSync(d,b); }
+  if(f==='sw.js'){ const pre=['./',...files.filter(x=>x!=='sw.js'&&!x.startsWith('downloads')).map(x=>x.split(path.sep).join('/'))];
+    let t=b.toString().replace("const VERSION='dev'",`const VERSION='${ver}'`).replace(/const FILES=\[[\s\S]*?\];/,`const FILES=${JSON.stringify(pre)};`);
+    if(!t.includes(`const FILES=${JSON.stringify(pre)}`)) throw new Error('sw FILES stamp failed'); b=Buffer.from(t); } fs.writeFileSync(d,b); }
 // Guard: no recipe content in bundle (checks for distinctive words from the private recipe file are done in tests)
 console.log(`built dist/ (${files.length} files, version ${ver})`);

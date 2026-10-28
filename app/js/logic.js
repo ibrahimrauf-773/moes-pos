@@ -12,7 +12,9 @@ export const fmtDT=ts=>{const p=pkParts(ts);return `${p.y}-${pad(p.m)}-${pad(p.d
 export const rs=n=>'Rs '+Math.round(n||0).toLocaleString('en-US');
 
 export const lineUnit=l=>(l.unitPrice||0)+(l.addons||[]).reduce((a,x)=>a+(x.price||0),0);
-export const lineTotal=l=>l.lineTotalOverride!=null?l.lineTotalOverride:lineUnit(l)*(l.qty||1);
+export const lineTotal=l=>l.foc?0:(l.lineTotalOverride!=null?l.lineTotalOverride:lineUnit(l)*(l.qty||1));
+// list value of a line ignoring FOC (for 'value given free' reporting)
+export const lineList=l=>l.lineTotalOverride!=null?l.lineTotalOverride:lineUnit(l)*(l.qty||1);
 export function computeTotals(o, settings={}){
   const subtotal=(o.lines||[]).reduce((a,l)=>a+lineTotal(l),0);
   let discount=0; const d=o.discount;
@@ -20,13 +22,29 @@ export function computeTotals(o, settings={}){
   const delivery=o.delivery?.charge||0;
   const taxable=subtotal-discount;
   const gst = settings.gstOn ? Math.round(taxable*(settings.gstPct||0)/100) : 0;
-  let total=taxable+delivery+gst;
+  let total=taxable+delivery+gst; if(d?.kind==='foc'){ total=0; }
   if(o.channel==='foodpanda' && o.fp?.total!=null) total=o.fp.total; // FP totals are authoritative
   return {subtotal,discount,delivery,gst,total};
 }
 export const paid=o=>(o.payments||[]).reduce((a,p)=>a+(p.amount||0),0);
 export const refunded=o=>(o.refunds||[]).reduce((a,r)=>a+(r.amount||0),0);
 export const isCounted=o=>o.status!=='void' && o.status!=='cancelled';
+// Outstanding (Pay Later / COD) amount on an order. Unpaid money is never cash in the drawer.
+export const due=(o,policy={})=>isCounted(o)?Math.max(0,computeTotals(o,policy).total-paid(o)):0;
+// Pakistani phone normalisation: +92 / 92 / 0092 / 3xx -> 03xxxxxxxxx
+export const normPhone=p=>{ p=String(p||'').replace(/[^\d+]/g,''); if(p.startsWith('+92')) p='0'+p.slice(3); else if(p.startsWith('0092')) p='0'+p.slice(4); else if(p.startsWith('92')&&p.length===12) p='0'+p.slice(2); else if(/^3\d{9}$/.test(p)) p='0'+p; return p; };
+export const validPhone=p=>/^03\d{9}$/.test(p);
+const top=(m,n=3)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([k,v])=>({name:k,count:v}));
+// Preferences derived from a customer's order history (newest last). drinkIds: menu ids in drink categories.
+export function customerPrefs(orders,drinkIds=new Set(),policy={}){ const os=orders.filter(isCounted).sort((a,b)=>a.createdAt-b.createdAt);
+  const heat={}, items={}, addons={}, drinks={}, pay={}, addr={};
+  for(const o of os){ for(const l of o.lines||[]){ const q=l.qty||1; if(l.heat) heat[l.heat]=(heat[l.heat]||0)+q; (drinkIds.has(l.itemId)?drinks:items)[l.name]=((drinkIds.has(l.itemId)?drinks:items)[l.name]||0)+q;
+      for(const a of l.addons||[]) addons[a.name]=(addons[a.name]||0)+q; }
+    for(const p of o.payments||[]) if(!p.settle) pay[p.method]=(pay[p.method]||0)+1; if(o.credit) pay.pay_later=(pay.pay_later||0)+1;
+    if(o.customer?.address) addr[o.customer.address]=(addr[o.customer.address]||0)+1; }
+  const totals=os.map(o=>computeTotals(o,policy).total);
+  return {orders:os.length,spent:totals.reduce((a,b)=>a+b,0),due:os.reduce((a,o)=>a+due(o,policy),0),last:os[os.length-1]||null,
+    heat:top(heat,1)[0]?.name||null,items:top(items),addons:top(addons),drinks:top(drinks,2),pay:top(pay,1)[0]?.name||null,address:top(addr,1)[0]?.name||null}; }
 
 // Permission rules (policy from owner, Oct 28)
 export function discountNeedsOwner(role, d, policy){
@@ -57,28 +75,33 @@ export function recipeCost(recipe, costByName){ let c=0, missing=[];
   return {batch:c, perUnit:recipe.yieldQty?c/recipe.yieldQty:0, missing}; }
 
 // ---------- Nightly report (Accountant spec) ----------
-export function shiftReport({orders, expenses=[], shift=null, zones=[], payMethods=[], policy={}}){
+export function shiftReport({orders, expenses=[], shift=null, zones=[], payMethods=[], policy={}, settlements=[], outstanding=null}){
   const counted=orders.filter(isCounted);
-  const r={byChannel:{},byPay:{},items:{},adjustments:[],deliveryByZone:{},expenses:[],fp:{orders:0,gross:0,commissionPct:policy.fpCommissionPct??23,commissionEst:0,payoutEst:0},samples:{}};
+  const r={byChannel:{},byPay:{},items:{},adjustments:[],deliveryByZone:{},expenses:[],foc:[],fp:{orders:0,gross:0,commissionPct:policy.fpCommissionPct??23,commissionEst:0,payoutEst:0},samples:{}};
   const ch=k=>r.byChannel[k]??={orders:0,gross:0};
   for(const o of counted){
     const t=computeTotals(o,policy); const c=ch(o.channel); c.orders++; c.gross+=t.total;
     if(o.channel==='foodpanda'){ r.fp.orders++; r.fp.gross+=t.total; }
-    for(const p of o.payments||[]){ (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; }
+    for(const p of o.payments||[]){ if(p.settle&&p.bd&&p.bd!==o.businessDate) continue; (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; }
     if(!(o.payments||[]).length && o.channel==='foodpanda'){ (r.byPay.fp_online??={count:0,amount:0}); r.byPay.fp_online.count++; r.byPay.fp_online.amount+=t.total; }
     for(const l of o.lines||[]){
       const key=l.itemId+'|'+l.name; const it=r.items[key]??={itemId:l.itemId,name:l.name,units:0,amount:0,sample:!!l.sample};
-      it.units+=l.qty||1; it.amount+=(l.unitPrice||0)*(l.qty||1)+(l.lineTotalOverride!=null?l.lineTotalOverride-lineUnit(l)*(l.qty||1):0);
+      it.units+=l.qty||1; it.amount+=l.foc?0:(l.unitPrice||0)*(l.qty||1)+(l.lineTotalOverride!=null?l.lineTotalOverride-lineUnit(l)*(l.qty||1):0);
+      if(l.foc) r.foc.push({orderNo:o.orderNo,scope:'item',item:`${l.qty}x ${l.name}`,value:lineList(l),reason:l.foc.reason,by:l.foc.by});
       if(l.sample){ r.samples[l.name]=(r.samples[l.name]||0)+(l.qty||1); }
       for(const a of l.addons||[]){ const ak='addon:'+a.id+'|'+a.name; const ai=r.items[ak]??={itemId:a.id,name:'Add-on: '+a.name,units:0,amount:0};
-        ai.units+=l.qty||1; ai.amount+=(a.price||0)*(l.qty||1); }
+        ai.units+=l.qty||1; ai.amount+=l.foc?0:(a.price||0)*(l.qty||1); }
     }
-    if(o.discount && t.discount) r.adjustments.push({orderNo:o.orderNo,type:o.discount.kind==='comp'?'comp':(o.discount.kind==='staff'?'staff meal':'discount'),amount:t.discount,reason:o.discount.reason||'',by:o.discount.approvedBy||o.staffId||''});
+    if(o.discount?.kind==='foc') r.foc.push({orderNo:o.orderNo,scope:'order',item:(o.lines||[]).map(l=>`${l.qty}x ${l.name}`).join(', '),value:t.discount,reason:o.discount.reason||'',by:o.discount.approvedBy||''});
+    else if(o.discount && t.discount) r.adjustments.push({orderNo:o.orderNo,type:o.discount.kind==='comp'?'comp':(o.discount.kind==='staff'?'staff meal':'discount'),amount:t.discount,reason:o.discount.reason||'',by:o.discount.approvedBy||o.staffId||''});
     for(const f of o.refunds||[]) r.adjustments.push({orderNo:o.orderNo,type:'refund',amount:f.amount,reason:f.reason,by:f.by,method:f.method});
     if(o.delivery){ const z=r.deliveryByZone[o.delivery.zone||'?']??={orders:0,charged:0,riderFare:0,diff:0};
       z.orders++; z.charged+=o.delivery.charge||0; z.riderFare+=o.delivery.riderFare||0; z.diff=z.charged-z.riderFare; }
   }
   for(const o of orders.filter(o=>!isCounted(o))) r.adjustments.push({orderNo:o.orderNo,type:o.status,amount:computeTotals(o,policy).total,reason:o.voidReason||'',by:o.voidBy||''});
+  r.dues={newCredit:counted.reduce((a,o)=>a+due(o,policy),0),creditOrders:counted.filter(o=>due(o,policy)>0).map(o=>({orderNo:o.orderNo,name:o.customer?.name||'',phone:o.customer?.phone||'',due:due(o,policy)})),collected:0,collectedList:[],outstanding};
+  for(const p of settlements){ (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount; r.dues.collected+=p.amount; r.dues.collectedList.push(p); }
+  for(const o of counted) for(const p of o.payments||[]) if(p.settle&&p.bd===o.businessDate){ r.dues.collected+=p.amount; r.dues.collectedList.push({...p,orderNo:o.orderNo,name:o.customer?.name}); }
   r.fp.commissionEst=Math.round(r.fp.gross*r.fp.commissionPct/100); r.fp.payoutEst=r.fp.gross-r.fp.commissionEst;
   r.fp.actualPayout = shift?.fpPayout ?? null; r.fp.payoutBatch = shift?.fpPayoutBatch ?? '';
   let cashExp=0, nonExp=0;
@@ -110,6 +133,12 @@ export function reportCSV(r, meta={}){
   for(const [z,v] of Object.entries(r.deliveryByZone)) rows.push(['Delivery zone '+z,'charged / rider fare / diff',v.orders,v.charged,`rider ${v.riderFare}; diff ${v.diff}`]);
   for(const e of r.expenses) rows.push(['Till expense',e.code+' '+(e.codeName||''),'',e.amount,e.note||'']);
   rows.push(['Foodpanda','orders/gross',r.fp.orders,r.fp.gross],['Foodpanda','commission est '+r.fp.commissionPct+'%','',r.fp.commissionEst],['Foodpanda','payout est','',r.fp.payoutEst],['Foodpanda','actual payout / batch','',r.fp.actualPayout??'',r.fp.payoutBatch||'']);
+  if(r.dues){ rows.push(['Dues','new unpaid / Pay Later today (not cash)',r.dues.creditOrders.length,r.dues.newCredit]); for(const c of r.dues.creditOrders) rows.push(['Dues: unpaid order','#'+(c.orderNo??''),'',c.due,`${c.name} ${c.phone}`]);
+    rows.push(['Dues','collected today (settlements)',r.dues.collectedList.length,r.dues.collected]); if(r.dues.outstanding!=null) rows.push(['Dues','total outstanding (all customers)','',r.dues.outstanding]); }
+  for(const x of r.foc||[]) rows.push(['FOC ('+x.scope+')','#'+(x.orderNo??''),x.item,0,`value ${x.value}; ${x.reason} (approved ${x.by})`]);
+  for(const x of meta.lowStock||[]) rows.push(['Low stock (for Supply)',x.name,x.onHand+' '+x.unit,'',`reorder at ${x.reorderLevel}${x.flag?' / flagged':''}`]);
+  for(const w of meta.waste||[]) rows.push(['Waste',w.item,w.qty+' '+w.unit,meta.owner?w.cost:'',`${w.reason} (by ${w.by}, ${w.loc})`]);
+  for(const v of meta.recon||[]) rows.push(['Inventory '+v.loc,v.name,`open ${v.opening??''} / exp ${v.expected??''} / close ${v.closing??''}`,meta.owner&&v.cost!=null?v.cost:'',`variance ${v.variance??''}${v.flags.length?' FLAG: '+v.flags.join('; '):''}`]);
   const t=r.till; rows.push(['Till','opening','',t.opening],['Till','cash sales','',t.cashSales],['Till','cash refunds','',t.cashRefunds],['Till','cash expenses','',t.cashExpenses],['Till','partner drawings/loan','',t.nonExpenseCashOut],['Till','expected close','',t.expected],['Till','counted','',t.counted??''],['Till','left with cashier','',t.leftWithCashier??''],['Till','over/short','',t.overShort??'']);
   return toCSV(rows);
 }
@@ -127,3 +156,40 @@ export function backlogToOrder(b, menus, zones){
     o.customer=b.customer; o.payments=(b.payments||[]).map(p=>({method:p.method,amount:p.amount,note:p.note,verified:p.status!=='unverified'})); }
   return o;
 }
+
+// ---------- Inventory reconciliation (pure) ----------
+// logs: invLogs for this loc+date (+prevLogs for previous date). counts are in internal units. moves: stockMoves.
+// expected = opening + receipts(delivery+transfer-in) - sent(transfer-out) - sales(recipe/usage deductions, net of void returns) - waste
+export const LOG_DATE_CUTOFF=6; // shift date: before 6 AM belongs to the previous day (3 AM close; Home opens 10 AM)
+const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;
+export function agreed(logs,phase,itemId){ const v=logs.filter(l=>l.phase===phase&&l.counts&&l.counts[itemId]!=null).map(l=>+l.counts[itemId]); return avg(v); }
+export function reconcile({items,logs=[],prevLogs=[],moves=[],loc,date,tolPct=10,owner=false}){
+  const rows=[]; const day=moves.filter(m=>m.location===loc&&businessDate(m.at,LOG_DATE_CUTOFF)===date&&!String(m.id).startsWith('cnt:'));
+  const sum=(id,types)=>day.filter(m=>m.itemId===id&&types.includes(m.type)).reduce((a,m)=>a+m.qty,0);
+  for(const it of items){ if(it.check||it.status) continue; if(!(it[loc==='home'?'home':'main'])) continue;
+    const f=it.countFactor||1, tol=Math.max(f, 0);
+    const opens=logs.filter(l=>l.phase==='opening'&&l.counts?.[it.id]!=null), closes=logs.filter(l=>l.phase==='closing'&&l.counts?.[it.id]!=null);
+    const prevClose=agreed(prevLogs,'closing',it.id); let opening=agreed(logs,'opening',it.id); const flags=[];
+    if(opening==null) opening=prevClose;
+    const receipts=sum(it.id,['delivery','transfer-in']), sent=-sum(it.id,['transfer-out']), sales=-sum(it.id,['sale','void-return']), waste=-sum(it.id,['wastage']);
+    const closing=agreed(logs,'closing',it.id);
+    const expected=opening==null?null:opening+receipts-sent-sales-waste; const variance=(closing==null||expected==null)?null:closing-expected;
+    const big=(a,b)=>Math.abs(a-b)>Math.max(tol, Math.abs(b)*tolPct/100);
+    if(variance!=null&&big(closing,expected)) flags.push(`variance ${variance>0?'+':''}${+(variance/f).toFixed(2)} ${it.countUnit||it.unit}`);
+    for(const [ph,arr] of [['opening',opens],['closing',closes]]) if(arr.length>1){ const vs=arr.map(l=>+l.counts[it.id]); if(Math.max(...vs)-Math.min(...vs)>Math.max(tol*0.5,Math.max(...vs)*tolPct/100)) flags.push(`${ph} counts differ: `+arr.map(l=>`${l.byName} ${+(l.counts[it.id]/f).toFixed(2)}`).join(' vs ')); }
+    for(const l of opens) if(prevClose!=null&&big(+l.counts[it.id],prevClose)) flags.push(`${l.byName} opening ${+(l.counts[it.id]/f).toFixed(2)} ≠ previous closing ${+(prevClose/f).toFixed(2)}`);
+    const q=v=>v==null?null:+(v/f).toFixed(2);
+    rows.push({id:it.id,name:it.name,loc,unit:it.countUnit||it.unit,opening:q(opening),receipts:q(receipts),sent:q(sent),sales:q(sales),waste:q(waste),expected:q(expected),closing:q(closing),variance:q(variance),
+      cost:owner&&variance!=null&&it.costPerUnit?Math.round(variance*it.costPerUnit):null,flags}); }
+  return rows; }
+export function lowStock(items,onHand,loc='main',checks={}){ return items.filter(i=>!i.status).map(i=>({i,oh:onHand[i.id+'|'+loc]||0})).filter(({i,oh})=>(i.reorderLevel>0&&oh<=i.reorderLevel)||i.reorderFlag||checks[i.id]==='reorder')
+  .map(({i,oh})=>({id:i.id,name:i.name,onHand:+(oh/(i.countFactor||1)).toFixed(2),unit:i.countUnit||i.unit,reorderLevel:+(i.reorderLevel/(i.countFactor||1)).toFixed(2),flag:!!i.reorderFlag||checks[i.id]==='reorder',supplier:i.supplier||''})); }
+// Owner dashboard aggregates over orders of one business date
+export function dashboard(orders,policy={}){ const c=orders.filter(isCounted); const tot=o=>computeTotals(o,policy).total;
+  const hourly={}; const items={}; const pay={}; const ch={};
+  for(const o of c){ const h=pkParts(o.createdAt).h; hourly[h]=(hourly[h]||0)+tot(o);
+    const k=o.channel==='instore'?'Walk-in':({whatsapp:'WhatsApp',foodpanda:'Foodpanda',mashion:'Mashion'})[o.channel]||o.channel; (ch[k]??={orders:0,gross:0}); ch[k].orders++; ch[k].gross+=tot(o);
+    for(const p of o.payments||[]) if(!p.settle){ pay[p.method]=(pay[p.method]||0)+p.amount; } const d=due(o,policy); if(d) pay.unpaid=(pay.unpaid||0)+d;
+    for(const l of o.lines||[]){ const it=items[l.name]??={name:l.name,units:0,amount:0}; it.units+=l.qty||1; it.amount+=lineTotal(l); } }
+  const gross=c.reduce((a,o)=>a+tot(o),0);
+  return {orders:c.length,gross,aov:c.length?Math.round(gross/c.length):0,hourly,top:Object.values(items).sort((a,b)=>b.units-a.units).slice(0,10),pay,ch}; }

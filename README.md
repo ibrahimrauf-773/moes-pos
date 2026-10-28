@@ -5,7 +5,7 @@ This is an offline-first PWA point of sale. All data is stored in IndexedDB on e
 ## Run on the laptop (Windows Chrome)
 1. Install Node 18 or newer.
 2. Run `node tools/build.mjs`. This builds the app into `dist/`. You can also open the hosted site: https://moes-pos.onrender.com
-3. Start the print helper with `node print-helper/server.cjs`. It listens on 127.0.0.1:9123 and sends 80mm ESC/POS output to the USB printer called "Black Copper". Use `--preview-only` to test without the printer.
+3. **Easy way (Windows):** download https://moes-pos.onrender.com/downloads/moes-print-helper.zip, extract it, and run `install.bat` as administrator (see `print-helper/windows/GUIDE.md`). Manual way: start the print helper with `node print-helper/server.cjs --share BlackCopper`. It listens on 127.0.0.1:9123 and sends 80mm ESC/POS output to the USB printer called "Black Copper". Use `--preview-only` to test without the printer.
 4. In Chrome, open the site and choose **Install app**.
 5. If the helper is not running, the app falls back to browser printing. Failed prints wait in a retry queue, and you can reprint from Orders.
 

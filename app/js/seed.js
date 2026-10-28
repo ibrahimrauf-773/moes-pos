@@ -52,8 +52,9 @@ export const ZONES=[
 // Placeholder PINs - owner must change them in Settings > Staff on first use.
 export const STAFF=[
  {id:'shaheer',name:'Shaheer',role:'owner',pin:'1111'},{id:'ibrahim',name:'Ibrahim',role:'owner',pin:'2222'},{id:'ruqaiya',name:'Ruqaiya',role:'owner',pin:'3333'},
- {id:'waqar',name:'Waqar',role:'cashier',pin:'4444'},{id:'shan',name:'Shan',role:'kitchen',pin:'5555'},{id:'amir',name:'Amir',role:'kitchen',pin:'6666'}];
-export const POLICY={staffMealPct:30,cashierMaxDiscountPct:10,cashierCanRefund:true,lateMinutes:15,fpCommissionPct:23,gstOn:false,gstPct:0};
+ {id:'waqar',name:'Waqar',role:'cashier',pin:'4444'},{id:'shan',name:'Shan',role:'kitchen',pin:'5555'},{id:'amir',name:'Amir',role:'kitchen',pin:'6666'},
+ {id:'ayesha',name:'Ayesha',role:'stock',pin:'7777'}];
+export const POLICY={staffMealPct:30,cashierMaxDiscountPct:10,cashierCanRefund:true,amberMinutes:12,lateMinutes:20,focApprovers:['waqar'],fpCommissionPct:23,gstOn:false,gstPct:0};
 export const EXPENSE_CODES=[
  ['5000','Chicken/Poultry'],['5010','Produce'],['5020','Dry Goods'],['5030','Dairy'],['5040','Bread & Bakery'],['5050','Oil & Spices'],['5100','Beverage Cost'],['5200','Packaging & To-Go'],
  ['6000','Payroll'],['6100','Rent'],['6200','Electric'],['6210','Gas'],['6220','Water'],['6230','Internet & Phone'],['6300','Delivery App Fees'],['6320','Bank Fees'],['6330','Delivery & Transport'],
@@ -61,35 +62,72 @@ export const EXPENSE_CODES=[
  ['DRAW','Partner Drawings (non-expense)'],['LOAN-IB','Ibrahim Loan (non-expense)']].map(([code,name])=>({code,name}));
 export const LOCATIONS=[{id:'home',name:'Home'},{id:'main',name:'Main Branch'},{id:'mashion',name:'Mashion stall'}];
 const I=(id,name,unit,pack,packUnit,reorder,supplier='',o={})=>({id,name,unit,packSize:pack,packLabel:packUnit,reorderLevel:reorder,supplier,costPerUnit:0,reorderFlag:false,...o});
+// Sections mirror the shop's paper sheets ("Home Daily Inventory Log" and "Main Branch Daily Inventory Log").
+export const SHEET_SECTIONS={
+ home:['Raw – Chicken & dairy','Raw – Dry goods & bread','Raw – Sauces & liquids','Frozen','Raw – Spices','Ready items (made at Home, not yet sent)'],
+ main:['Ready items from Home','Fries','Drinks, desserts & bread','Kitchen','Packaging','Supplies checklist']};
+// home/main: [section index, name on that sheet if different]. countUnit/countFactor: unit written on the sheet vs. internal unit
+// (e.g. fries counted in kg, stored in g because sales deduct grams). check:'ok' = OK/Reorder tick only; status:'FHL' = gas cylinder.
+const H=(sec,name)=>({sec,name}), M=H;
+// Home raw ingredients & spices are NOT shipped (they would reveal recipes); they come with the owner's private import file.
+const CK=(id,name,o={})=>I(id,name,'pc',1,'',0,'',{cat:'Supplies',main:M(5),check:'ok',...o});
 export const INVENTORY=[
- I('chicken','Chicken breast (boneless)','g',1000,'kg',0,'Ali Chicken'),
- I('ready_tenders','Ready tenders','pc',90,'batch',30,'Home prep'),
- I('ready_mozz','Ready mozzarella sticks','pc',35,'batch',15,'Home prep'),
- I('mac_portion','Mac portion (sauce+pasta)','portion',6,'batch',6,'Home prep'),
- I('slider_buns','Slider buns','pc',4,'pkt of 4',8,'Khawar (Rs170/pkt)'),
- I('dinner_rolls','NECOS dinner rolls','pc',12,'pack of 12',12,'NECOS (order by 5PM)'),
- I('pickles','Pickles','g',1000,'kg',500,'Kamran Bhai'),
- I('fries','Fries (straight)','g',1000,'kg',2000,'Branch'),
- I('moes_sauce_g',"Moe's sauce (ready)",'cup',1,'2oz cup',20,'Home prep'),
- I('white_sauce_g','White sauce (ready)','cup',1,'2oz cup',20,'Home prep'),
- I('hot_honey_g','Hot honey (ready)','cup',1,'2oz cup',20,'Home prep'),
- I('baja_mix','Baja Blast mix (40% Dew/40% 7up/20% Gatorade)','ml',1500,'bottle',2000,'Branch'),
- I('cup12','12oz cups','pc',50,'sleeve',20,'Zia / Abdul Bari'),
- I('straws','Straws','pc',100,'pack',50,'Zia / Abdul Bari'),
- I('drink_bags','Drink bags','pc',100,'pack',20,'Zia / Abdul Bari'),
- I('butter_paper','Butter paper','pc',100,'pack',20,'Abdul Bari'),
- I('dip2oz','2oz dip cups','pc',100,'pack',50,'Zia / Delhi Colony'),
- I('lp24','LP24 boxes','pc',50,'pack',25,'Abdul Bari'),
- I('round500','500ml round boxes','pc',50,'pack',10,'Abdul Bari'),
- I('takeaway_bags','Takeaway bags','pc',100,'pack of 100 (~Rs2500)',25,'Abdul Bari'),
- I('oil','Cooking oil','L',10,'can',10,'Branch',{reorderFlag:true}),
- I('gas','Gas cylinder','pc',1,'cylinder',1,'Branch',{reorderFlag:true}),
+ // Home 1. Raw – Chicken & dairy
+ I('chicken','Raw chicken breast','g',1000,'kg',0,'Ali Chicken',{cat:'Raw',home:H(0),countUnit:'kg',countFactor:1000,aliases:['Chicken breast (boneless)']}),
+ // Home 2. Raw – Dry goods & bread
+ I('slider_buns','Slider buns – Khawar','pcs',4,'pkt of 4',8,'Khawar (Rs170/pkt)',{cat:'Bread',home:H(1),main:M(0),aliases:['Slider buns']}),
+ // Home 3. Raw – Sauces & liquids (sheet says "write unit": default bottle, editable)
+ // Home 4. Frozen  (+ Main 2. Fries)
+ I('fries','FrozenHub straight fries','g',1000,'kg',2000,'FrozenHub',{cat:'Frozen',home:H(3),main:M(1,'Straight fries'),countUnit:'kg',countFactor:1000,aliases:['Fries (straight)']}),
+ I('curly_fries','FrozenHub curly fries','g',1000,'kg',2000,'FrozenHub',{cat:'Frozen',home:H(3),main:M(1,'Curly fries'),countUnit:'kg',countFactor:1000}),
+ // Home 5. Raw – Spices (all grams)
+ // Home 6. Ready items  = Main 1. Ready items from Home
+ I('ready_tenders','Ready chicken tenders','pcs',90,'batch',30,'Home prep',{cat:'Ready',home:H(5),main:M(0),aliases:['Ready tenders']}),
+ I('ready_mozz','Mozzarella sticks','pcs',35,'batch',15,'Home prep',{cat:'Ready',home:H(5),main:M(0),aliases:['Ready mozzarella sticks']}),
+ I('moes_sauce_g',"Moe's sauce",'g',1000,'batch',1000,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('white_sauce_g','White sauce','g',1000,'batch',1000,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('pickle_water','Pickle water','ml',1000,'batch',0,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('mac_portion','Mac n cheese – macaroni','portions',6,'batch',6,'Home prep',{cat:'Ready',home:H(5),main:M(0),aliases:['Mac portion (sauce+pasta)']}),
+ I('mac_sauce','Mac n cheese – cheese sauce','portions',6,'batch',6,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('hot_honey_g',"Moe's Hot Honey",'2 oz cups',1,'2 oz cup',20,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('mix_mild','Spice mix – Mild','g',1000,'batch',0,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('mix_medium','Spice mix – Medium','g',1000,'batch',0,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('mix_hot','Spice mix – Hot','g',1000,'batch',0,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('mix_xhot','Spice mix – Extra Hot','g',1000,'batch',0,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('reaper_powder','Reaper powder','g',100,'batch',0,'Home prep',{cat:'Ready',home:H(5),main:M(0)}),
+ I('pickles','Bought pickles','g',1000,'jar',500,'Kamran Bhai',{cat:'Ready',main:M(0),countUnit:'jar',countFactor:1000,aliases:['Pickles']}),
+ // Main 3. Drinks, desserts & bread (drinks reorder at 1 bottle)
+ I('dew340','Mountain Dew 340 ml','bottles',1,'bottle',1,'',{cat:'Drinks',main:M(2)}),
+ I('sevenup250','7up 250 ml','bottles',1,'bottle',1,'',{cat:'Drinks',main:M(2)}),
+ I('gatorade500','Gatorade 500 ml','bottles',1,'bottle',1,'',{cat:'Drinks',main:M(2)}),
+ I('donuts','Glazed donuts','pcs',1,'pc',0,'',{cat:'Desserts',main:M(2)}),
+ I('dinner_rolls','Dinner rolls – NECOS','pcs',12,'pack of 12',12,'NECOS (order by 5PM)',{cat:'Bread',main:M(2),aliases:['NECOS dinner rolls']}),
+ // Main 4. Kitchen
+ I('oil','Frying oil','L',10,'can',10,'Branch',{cat:'Kitchen',main:M(3),reorderFlag:false}),
+ I('gas','Gas cylinder','pc',1,'cylinder',1,'Branch',{cat:'Kitchen',main:M(3),status:'FHL'}),
+ // Main 5. Packaging (reorder levels from the sheet)
+ I('takeaway_bags','Takeaway bags','pcs',100,'pack of 100 (~Rs2500)',25,'Abdul Bari',{cat:'Packaging',main:M(4)}),
+ I('lp24','LP24 boxes','pcs',50,'pack',25,'Abdul Bari',{cat:'Packaging',main:M(4)}),
+ I('dip2oz','2 oz dip cups','pcs',100,'pack',50,'Zia / Delhi Colony',{cat:'Packaging',main:M(4),aliases:['2oz dip cups']}),
+ I('round500','500 ml round box with lid','pcs',50,'pack',10,'Zia Plastic Market',{cat:'Packaging',main:M(4),aliases:['500ml round boxes']}),
+ I('cup12','12 oz cup/glass','pcs',50,'sleeve',20,'Zia Plastic Market',{cat:'Packaging',main:M(4),aliases:['12oz cups']}),
+ // Main 6. Supplies checklist (OK / Reorder only)
+ CK('napkins','Napkins'), CK('forks','Forks'), CK('spoons','Spoons'),
+ I('butter_paper','Butter paper','pc',100,'pack',20,'Abdul Bari',{cat:'Supplies',main:M(5),check:'ok'}),
+ CK('sanitizer','Sanitizer'), CK('surf','Surf'), CK('soap','Soap'), CK('garbage_bags','Garbage bags'), CK('cleaning_wire','Cleaning wire'),
+ CK('sponge','Sponge'), CK('cloths','Cloths'), CK('black_gloves','Black gloves'), CK('disposable_gloves','Disposable gloves'), CK('room_spray','Room spray'), CK('mortein','Mortein'),
+ I('straws','Straws (packets of 100)','pc',100,'pack',50,'Zia / Abdul Bari',{cat:'Supplies',main:M(5),check:'ok',aliases:['Straws']}),
+ I('drink_bags','Drink bags','pc',100,'pack',20,'Zia / Abdul Bari',{cat:'Supplies',main:M(5),check:'ok'}),
+ // Not on the paper sheets (kept for automatic deduction of Baja Blast)
+ I('baja_mix','Baja Blast mix (40% Dew/40% 7up/20% Gatorade)','ml',1500,'bottle',2000,'Branch',{cat:'Drinks'}),
 ];
+// ASSUMPTION (sheet counts sauces in grams; POS sells 2 oz dip cups): ~55 g per 2 oz cup. Owner can edit in Settings.
+export const SAUCE_G_PER_DIP=55;
 // Per-item usage (Supply, non-confidential): consumables per unit sold. takeaway:true = only for takeaway/delivery.
 export const USAGE={
  baja:[['cup12',1],['straws',1],['baja_mix',230],['drink_bags',1,true],['butter_paper',1,true]],
- moes_sauce:[['dip2oz',1],['moes_sauce_g',1]], white_sauce:[['dip2oz',1],['white_sauce_g',1]], hot_honey:[['dip2oz',1],['hot_honey_g',1]],
- dinner_roll:[['dinner_rolls',2]], mac:[['round500',1,true]],
+ moes_sauce:[['dip2oz',1],['moes_sauce_g',SAUCE_G_PER_DIP]], white_sauce:[['dip2oz',1],['white_sauce_g',SAUCE_G_PER_DIP]], hot_honey:[['dip2oz',1],['hot_honey_g',1]],
+ dinner_roll:[['dinner_rolls',2]], mac:[['round500',1,true],['mac_sauce',1]],
  combo1:[['lp24',1,true],['dinner_rolls',1]], combo2:[['lp24',1,true]], combo3:[['lp24',1,true]], mozz:[['lp24',1,true]], loaded_fries:[['lp24',1,true]],
  _order:[['takeaway_bags',1,true]],
 };
