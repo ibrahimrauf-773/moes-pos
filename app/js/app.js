@@ -29,7 +29,7 @@ async function migrate(){ const v=await db.kvGet('seedVer',1); if(v>=3) return;
   await db.kvSet('usage',S.USAGE); await db.kvSet('seedVer',3); }
 async function loadCfg(){ App.settings=await db.kvGet('settings'); App.policy=await db.kvGet('policy'); App.usage=await db.kvGet('usage',S.USAGE);
   App.menus=Object.fromEntries((await db.all('menus')).map(m=>[m.id,m])); App.zones=(await db.all('zones')).sort((a,b)=>a.id.localeCompare(b.id));
-  App.staff=await db.all('staff'); App.inv=await db.all('inventory'); App.loc=await db.kvGet('location','main'); App.bom=await db.kvGet('bomPublic',[]); }
+  App.staff=await db.all('staff'); App.inv=await db.all('inventory'); App.loc=await db.kvGet('location','main'); App.rush=!!(await db.kvGet('rush',false)); App.bom=await db.kvGet('bomPublic',[]); }
 export async function boot(){
   try{ await db.open(); }catch(e){ document.body.innerHTML='<div class="fatal">Storage unavailable: '+esc(e.message)+'. In Safari, turn off Private Browsing.</div>'; return; }
   if(!await db.kvGet('deviceId')) await db.kvSet('deviceId',db.uid());
@@ -58,10 +58,10 @@ function bindForm(w,res){ const f=$('form',w); f.onsubmit=e=>{ e.preventDefault(
   $$('[data-x]',w).forEach(x=>x.onclick=dismiss);
   w.onmousedown=e=>{ w._down=e.target===w; }; w.onclick=e=>{ if(e.target===w&&w._down!==false) dismiss(); };
   if(w._esc) document.removeEventListener('keydown',w._esc); w._esc=e=>{ if(e.key==='Escape'&&w.isConnected&&w===$$('.modal-bg').pop()){ e.preventDefault(); dismiss(); } }; document.addEventListener('keydown',w._esc); }
-function modal(title,body,{ok='OK',cancel='Cancel',wide=false}={}){ closeModal(); return new Promise(res=>{
-  const w=document.createElement('div'); w.className='modal-bg'; w.innerHTML=`<form class="modal ${wide?'wide':''}" data-t="modal"><button type="button" class="mclose" data-x data-t="modal-close" aria-label="Close" title="Close (Esc)">✕</button><h2>${esc(title)}</h2><div class="mbody">${body}</div><div class="err" data-t="modal-err"></div>
+function modal(title,body,{ok='OK',cancel='Cancel',wide=false,inline=false}={}){ closeModal(); return new Promise(res=>{
+  const w=document.createElement('div'); w.className='modal-bg'+(inline&&$('.cart')?' inline':''); w.innerHTML=`<form class="modal ${wide?'wide':''}" data-t="modal"><button type="button" class="mclose" data-x data-t="modal-close" aria-label="Close" title="Close (Esc)">✕</button><h2>${esc(title)}</h2><div class="mbody">${body}</div><div class="err" data-t="modal-err"></div>
    <div class="mbtns">${cancel?`<button type="button" class="btn ghost" data-x data-t="modal-cancel">${cancel}</button>`:''}<button class="btn primary" data-t="modal-ok">${ok}</button></div></form>`;
-  document.body.append(w); const first=$('input:not([type=radio]):not([type=checkbox]),select,textarea',w); first&&first.focus(); bindForm(w,res); }); }
+  (inline&&$('.cart')?$('.cart'):document.body).append(w); const first=$('input:not([type=radio]):not([type=checkbox]),select,textarea',w); first&&first.focus(); bindForm(w,res); }); }
 function closeModal(){ $$('.modal-bg').forEach(m=>{ if(m._esc) document.removeEventListener('keydown',m._esc); m.remove(); }); }
 function modalErr(msg){ const e=$('[data-t=modal-err]'); if(e) e.textContent=msg; }
 async function form(title,body,validate,opts){ let r=await modal(title,body,opts);
@@ -90,16 +90,32 @@ function renderLogin(){ App.user=null; document.body.className='';
 // ---------- shell ----------
 const NAV=[['dash','Dashboard',['owner']],['pos','New order',['owner','cashier']],['orders','Orders',['owner','cashier']],['live','Live orders',['owner','cashier']],['kds','Kitchen',['owner','cashier','kitchen']],['inventory','Inventory',['owner','cashier','kitchen','stock']],['stocklog','Log Inventory',['owner','cashier','stock']],
   ['till','Till',['owner','cashier']],['reports','Reports',['owner','cashier']],['customers','Customers',['owner','cashier']],['recipes','Recipes',['owner']],['settings','Settings',['owner']]];
-function renderShell(){ document.body.className='role-'+App.user.role+(App.loc==='mashion'?' bazaar':'');
-  document.body.innerHTML=`<header><img src="icons/logo-96.png" alt="" class="hlogo"><nav>${NAV.filter(n=>n[2].includes(App.user.role)).map(n=>`<button class="nav ${App.view===n[0]?'on':''}" data-nav="${n[0]}">${n[1]}</button>`).join('')}</nav>
-   <div class="hright">${["owner","cashier"].includes(App.user.role)?'<button class="btn small ghost" id="sndbtn" data-t="sound"></button>':''}<span id="status" data-t="status"></span>${App.user.role!=='kitchen'?`<button class="btn small loc" data-t="loc" id="locbtn">${App.loc==='mashion'?'MASHION STALL':'Main Branch'}</button>`:''}<button class="btn small ghost" id="logout" data-t="logout">${esc(App.user.name)} ⏻</button></div></header>
-   <div id="banner"></div><main id="main"></main>`;
-  $$('[data-nav]').forEach(b=>b.onclick=()=>go(b.dataset.nav)); $('#logout').onclick=async()=>{ await logAct('logout'); App.recipes=null; stopAlert(); renderLogin(); };
+const HUB=['live','kds','orders'];
+const PRIMARY=role=>role==='kitchen'?['kds']:role==='stock'?['stocklog']:['pos','live'];
+const OWNER_ONLY=NAV.filter(n=>n[2].length===1&&n[2][0]==='owner').map(n=>n[0]);
+function renderShell(){ document.body.className='role-'+App.user.role+(App.loc==='mashion'?' bazaar':'')+(App.rush?' rush':'');
+  const role=App.user.role, allowed=NAV.filter(n=>n[2].includes(role)), prim=PRIMARY(role);
+  const label=id=>id==='live'||id==='kds'&&role==='kitchen'?'Orders':NAV.find(n=>n[0]===id)[1];
+  const more=allowed.filter(n=>!prim.includes(n[0])&&!(HUB.includes(n[0])&&prim.includes('live')));
+  const locked=role==='owner'?[]:NAV.filter(n=>OWNER_ONLY.includes(n[0]));
+  document.body.innerHTML=`<header class="top"><img src="icons/logo-96.png" alt="" class="hlogo"><nav class="pnav">${prim.filter(id=>allowed.some(n=>n[0]===id)).map(id=>`<button class="nav" data-nav="${id}">${label(id)}</button>`).join('')}
+   ${more.length||locked.length?`<div class="more"><button class="nav" id="morebtn" data-t="more" aria-haspopup="true">More ▾</button><div class="moremenu hidden" id="moremenu" data-t="moremenu">${more.map(n=>`<button class="mitem" data-nav="${n[0]}">${n[1]}</button>`).join('')}${locked.map(n=>`<button class="mitem locked" data-lock="${n[0]}" data-t="lock-${n[0]}">${n[1]} 🔒</button>`).join('')}${locked.length?'<div class="mfoot">🔒 owner PIN required</div>':''}</div></div>`:''}</nav>
+   <div class="hright"><span class="pill live" id="livepill" data-t="live-count"></span>${role==='owner'?'<span class="pill snap" id="snap" data-t="sales-snap"></span>':''}${["owner","cashier"].includes(role)?`<button class="btn small ghost ${App.rush?'on':''}" id="rushbtn" data-t="rush" title="Rush mode: one tap adds with the usual heat">⚡ Rush${App.rush?' on':''}</button><button class="btn small ghost" id="sndbtn" data-t="sound"></button>`:''}<span id="status" data-t="status"></span>${role!=='kitchen'?`<button class="btn small loc" data-t="loc" id="locbtn">${App.loc==='mashion'?'MASHION STALL':'Main Branch'}</button>`:''}<button class="btn small ghost" id="logout" data-t="logout">${esc(App.user.name)} ⏻</button></div></header>
+   <div id="banner"></div><div id="hub"></div><main id="main"></main>`;
+  $$('[data-nav]').forEach(b=>b.onclick=()=>{ $('#moremenu')?.classList.add('hidden'); go(b.dataset.nav); });
+  $$('[data-lock]').forEach(b=>b.onclick=()=>{ $('#moremenu')?.classList.add('hidden'); toast('Owner only – log in with an owner PIN','err'); });
+  $('#morebtn')&&($('#morebtn').onclick=e=>{ e.stopPropagation(); $('#moremenu').classList.toggle('hidden'); });
+  if(!App._mc){ App._mc=1; document.addEventListener('click',e=>{ if(!e.target.closest('.more')) $('#moremenu')?.classList.add('hidden'); }); }
+  $('#rushbtn')&&($('#rushbtn').onclick=async()=>{ App.rush=!App.rush; await db.kvSet('rush',App.rush); document.body.classList.toggle('rush',App.rush); $('#rushbtn').classList.toggle('on',App.rush); $('#rushbtn').textContent='⚡ Rush'+(App.rush?' on':''); toast(App.rush?'Rush mode on: one tap adds with the usual heat':'Rush mode off'); });
+  $('#logout').onclick=async()=>{ await logAct('logout'); App.recipes=null; stopAlert(); renderLogin(); };
   $('#locbtn')&&($('#locbtn').onclick=async()=>{ App.loc=App.loc==='mashion'?'main':'mashion'; await db.kvSet('location',App.loc); App.draft=null; await db.kvSet('draft',null); await logAct('location',{loc:App.loc}); renderShell(); });
-  { const nv=$('header nav'); const upd=()=>nv.classList.toggle('atend',nv.scrollLeft+nv.clientWidth>=nv.scrollWidth-2); nv.addEventListener('scroll',upd,{passive:true}); addEventListener('resize',upd); requestAnimationFrame(upd); }
   updSound(); $('#sndbtn')&&($('#sndbtn').onclick=()=>{ unlockAudio(); setTimeout(()=>{ updSound(); if(soundOn()) chime(); },120); });
   renderStatus(); go(NAV.find(n=>n[0]===App.view&&n[2].includes(App.user.role))?App.view:(App.user.role==='kitchen'?'kds':App.user.role==='stock'?'stocklog':'pos'));
 }
+function renderHub(v){ const h=$('#hub'); if(!h) return; const role=App.user.role; const tabs=[['live','Live orders'],['kds','Kitchen'],['orders','History']].filter(([id])=>NAV.some(n=>n[0]===id&&n[2].includes(role)));
+  if(!HUB.includes(v)||tabs.length<2){ h.innerHTML=''; return; }
+  h.innerHTML=`<div class="hubtabs" data-t="hubtabs">${tabs.map(([id,n])=>`<button class="tab ${v===id?'on':''}" data-hub="${id}" data-t="hub-${id}">${n}</button>`).join('')}</div>`;
+  $$('[data-hub]',h).forEach(b=>b.onclick=()=>go(b.dataset.hub)); }
 async function renderStatus(){ const el=$('#status'); if(!el) return; const ls=await db.kvGet('lastSync'); const sc=await Sync.config(); const pj=(await P.pending()).length; const os=O.state();
   const lastOk=ls?.okAt||(ls?.ok?ls.at:0); const stale=sc.enabled&&(!navigator.onLine||(ls&&!ls.ok))&&(!lastOk||now()-lastOk>60000);
   const syncPill=sc.enabled?`<span class="spill ${ls?.ok&&navigator.onLine?'ok':stale?'bad':'wait'}" data-t="sync-pill" title="${ls?.error?esc(ls.error):'Last sync '+(lastOk?L.fmtDT(lastOk):'never')}">${ls?.ok&&navigator.onLine?'Synced ✓':'Not synced'} <small>${lastOk?L.fmtTime(lastOk):'—'}</small></span>`:'';
@@ -108,9 +124,14 @@ async function renderStatus(){ const el=$('#status'); if(!el) return; const ls=a
   $('#retryp')&&($('#retryp').onclick=async()=>{ const r=await P.processQueue(); toast(r.fail?'Printer still offline':'Printed'); renderStatus(); });
   const b=$('#banner'); if(b){ const msgs=[]; if(App.persisted===false) msgs.push('Storage is not marked persistent on this device. On iPad, add the app to the Home Screen and export backups regularly.');
     if(App.user?.mustChangePin && App.user.role==='owner') msgs.push('Placeholder PINs in use: change all PINs in Settings → Staff.');
-    b.innerHTML=msgs.map(m=>`<div class="bannermsg" data-t="banner">${esc(m)}</div>`).join(''); } }
+    const shown=msgs.filter(m=>!(App.dismissed||new Set()).has(m));
+    b.innerHTML=shown.length?`<div class="bannermsg" data-t="banner"><span>${shown.map(esc).join(' · ')}</span><button class="btn small ghost bclose" data-t="banner-dismiss" aria-label="Dismiss">✕</button></div>`:'';
+    $('[data-t=banner-dismiss]',b)&&($('[data-t=banner-dismiss]',b).onclick=()=>{ shown.forEach(m=>(App.dismissed??=new Set()).add(m)); renderStatus(); }); }
+  // live orders count (everyone) + sales snapshot (owners only, after login)
+  const lp=$('#livepill'); if(lp){ const act=(await db.all('orders')).filter(o=>(o.location||'main')===App.loc&&(flowActive(o)||(!o.flow&&o.status==='open'))); lp.innerHTML=`Live orders <b class="num">${act.length}</b>`; lp.classList.toggle('hot',act.some(o=>o.flow?.status==='received')); }
+  const sn=$('#snap'); if(sn&&App.user?.role==='owner'){ const os=(await ordersFor(L.businessDate(now()),App.loc)).filter(o=>!['void','cancelled'].includes(o.status)); sn.innerHTML=`Today <b class="num">${L.rs(os.reduce((a,o)=>a+L.computeTotals(o,App.policy).total,0))}</b> · ${os.length}`; } }
 async function applyPrintClass(){ document.body.classList.toggle('noprint',!(await P.printingEnabled())); }
-function go(v){ App.view=v; applyPrintClass(); $$('[data-nav]').forEach(b=>b.classList.toggle('on',b.dataset.nav===v)); $('[data-nav].on')?.scrollIntoView({inline:'nearest',block:'nearest'}); const m=$('#main'); m.innerHTML=''; m.dataset.view=v;
+function go(v){ App.view=v; applyPrintClass(); $$('[data-nav]').forEach(b=>b.classList.toggle('on',b.dataset.nav===v||(b.dataset.nav==='live'&&HUB.includes(v)))); $('#morebtn')?.classList.toggle('on',!!$('#moremenu [data-nav].on')); renderHub(v); $('[data-nav].on')?.scrollIntoView({inline:'nearest',block:'nearest'}); const m=$('#main'); m.innerHTML=''; m.dataset.view=v;
   if(!NAV.some(n=>n[0]===v&&n[2].includes(App.user.role))){ m.innerHTML='<p class="pad1">Owner only / not available for your role.</p>'; return; }
   return ({dash:renderDash,stocklog:renderStockLog,pos:renderPOS,orders:renderOrders,live:renderLive,kds:renderKDS,inventory:renderInventory,till:renderTill,reports:renderReports,customers:renderCustomers,recipes:renderRecipes,settings:renderSettings})[v]?.(); }
 
@@ -125,34 +146,48 @@ async function renderPOS(){
   const d=App.draft ??= newDraft(); const mk=menuKey(d); const menu=App.menus[mk]; const cats=[...new Set(menu.items.map(i=>i.cat))];
   const heats=mk==='store'?S.HEATS:S.FP_HEATS;
   const t=L.computeTotals(d,App.policy);
-  $('#main').innerHTML=`<div class="pos"><section class="menu">
+  const ch=kindOf(d), favs=mk==='mashion'?[]:await favourites(menu), hasCombo=d.lines.some(l=>/^combo/.test(l.itemId)), hasDrink=d.lines.some(l=>drinkIds().has(l.itemId));
+  const upsell=hasCombo&&!hasDrink?['baja','lemonade'].map(id=>menu.items.find(i=>i.id===id&&i.on)).filter(Boolean):[];
+  const tile=i=>`<button class="item ${i.on?'':'off'}" data-item="${i.id}">${PHOTOS[i.id]?`<img class="ph" src="${PHOTOS[i.id]}" alt="" loading="lazy">`:`<span class="ph ph0" aria-hidden="true">${phIcon(i)}</span>`}<span class="iname">${esc(i.name)}</span><b class="num">${i.on?L.rs(i.price):'SOLD OUT'}</b>${i.pending?'<small>pending</small>':''}</button>`;
+  const fpMode=d.channel==='foodpanda';
+  $('#main').innerHTML=`<div class="pos"><section class="menu" data-t="menu">
    ${App.loc==='mashion'?'<div class="chan"><b class="bazaar-tag">Bazaar mode – Mashion stall menu (prices PENDING owner confirmation)</b></div>':
-   `<div class="chan">${[['dine_in','Dine-in'],['takeaway','Takeaway'],['whatsapp','WhatsApp delivery'],['foodpanda','Foodpanda']].map(([k,n])=>`<button class="btn chip ${kindOf(d)===k?'on':''}" data-ch="${k}">${n}</button>`).join('')}</div>`}
-   ${cats.map(c=>`<h3>${esc(c)}</h3><div class="grid">${menu.items.filter(i=>i.cat===c).map(i=>`<button class="item ${i.on?'':'off'}" data-item="${i.id}"><span>${esc(i.name)}</span><b>${i.on?L.rs(i.price):'SOLD OUT'}</b>${i.pending?'<small>pending</small>':''}</button>`).join('')}</div>`).join('')}
-  </section><aside class="cart" data-t="cart"><h2>${({foodpanda:'Foodpanda order',whatsapp:'WhatsApp delivery',mashion:'Stall order',dine_in:'Dine-in',takeaway:'Takeaway'})[kindOf(d)]}</h2>
-   ${d.channel!=='foodpanda'?`<div class="cf" data-t="custbox"><div class="csearch"><input id="cphone" data-t="cphone" placeholder="${d.channel==='whatsapp'?'Phone 03XXXXXXXXX':'Phone (optional – walk-in can skip)'}" value="${esc(d.customer?.phone)}" inputmode="tel" autocomplete="off"><div id="csug" class="csug" data-t="csug"></div></div>
-     <input id="cname" data-t="cname" placeholder="Name${d.channel==='whatsapp'?'':' (optional)'}" value="${esc(d.customer?.name)}">${d.channel==='whatsapp'?`<input id="caddr" data-t="caddr" placeholder="Address / pin" value="${esc(d.customer?.address)}"><input id="clmk" data-t="clandmark" placeholder="Landmark / map link (optional)" value="${esc(d.customer?.landmark)}">
-     <select id="zone" data-t="zone"><option value="">Zone…</option>${App.zones.map(z=>`<option value="${z.id}" ${d.delivery?.zone===z.id?'selected':''}>${z.name} – ${L.rs(z.customerCharge)} (${esc(z.areas.slice(0,40))}…)</option>`).join('')}</select>`:''}<div id="cinfo" data-t="cinfo"></div></div>`:''}
-   ${d.channel==='foodpanda'?`<div class="cf"><input id="fpid" data-t="fpid" placeholder="FP order ID (e.g. p25h-2644-xxxx)" value="${esc(d.fp?.orderId)}"><input id="fptotal" data-t="fptotal" inputmode="numeric" placeholder="FP total (authoritative)" value="${d.fp?.total??''}"></div>`:''}
-   <ul class="lines">${d.lines.map((l,i)=>`<li data-line="${i}"><div><b>${l.qty}× ${esc(l.name)}</b>${l.heat?` <span class="heat h-${l.heat.replace(/ /g,'')}">${l.heat}</span>`:''}${(l.addons||[]).map(a=>`<div class="sub">+ ${esc(a.name)} ${a.price?L.rs(a.price):''}</div>`).join('')}${l.note?`<div class="sub note">“${esc(l.note)}”</div>`:''}</div>
-     <div class="lr"><span>${l.foc?`<b class="foc" data-t="line-foc-${i}">FOC</b>`:L.rs(L.lineTotal(l))}</span><button class="btn small ghost" data-foc="${i}" data-t="foc-line-${i}" title="Free of charge">${l.foc?'Undo FOC':'FOC'}</button><button class="btn small" data-qm="${i}">−</button><button class="btn small" data-qp="${i}">+</button><button class="btn small ghost" data-del="${i}">✕</button></div></li>`).join('')||'<li class="empty">Tap menu items to add</li>'}</ul>
-   <textarea id="onote" data-t="onote" placeholder="Order note">${esc(d.note)}</textarea>
-   <div class="cfoot"><div class="tot"><div><span>Subtotal</span><span data-t="subtotal">${L.rs(t.subtotal)}</span></div>${t.discount?`<div><span>Discount (${d.discount.kind}${d.discount.type==='pct'?' '+d.discount.value+'%':''})</span><span data-t="disc-amt">−${L.rs(t.discount)}</span></div>`:''}
-    ${t.delivery?`<div><span>Delivery ${d.delivery.zone}</span><span data-t="deliv">${L.rs(t.delivery)}</span></div>`:''}${t.gst?`<div><span>GST</span><span>${L.rs(t.gst)}</span></div>`:''}
-    <div class="grand"><span>Total${d.channel==='foodpanda'&&d.fp?.total!=null?' (FP)':''}</span><span data-t="total">${L.rs(t.total)}</span></div></div>
-   <div class="cbtns"><button class="btn ghost" id="disc" data-t="discount">Discount / staff / comp</button><button class="btn ghost" id="clear" data-t="clear">Clear</button><button class="btn primary big" id="checkout" data-t="checkout" ${d.lines.length?'':'disabled'}>Charge ${L.rs(t.total)}</button></div></div></aside></div>`;
-  $$('[data-ch]').forEach(b=>b.onclick=async()=>{ const k=b.dataset.ch; const prev=menuKey(d);
+   `<div class="chan seg">${[['dine_in','Dine-in'],['takeaway','Takeaway'],['whatsapp','Delivery'],['foodpanda','Foodpanda']].map(([k,n])=>`<button class="btn chip ${ch===k?'on':''}" data-ch="${k}">${n}</button>`).join('')}</div>`}
+   <div class="catbar" data-t="catbar">${cats.map((c,i)=>`<button class="catchip" data-cat="${i}" title="Key ${i+1}"><kbd>${i+1}</kbd> ${esc(c)}</button>`).join('')}</div>
+   ${favs.length?`<h3 class="lbl">Favourites</h3><div class="favs" data-t="favs">${favs.map(f=>`<button class="fav" data-fav="${f.id}" data-heat="${esc(f.heat||'')}" data-t="fav-${f.id}"><span>${esc(f.short)}${f.heat&&heats.includes(f.heat)?` · ${esc(f.heat)}`:''}</span><b class="num">${L.rs(f.price)}</b></button>`).join('')}</div>`:''}
+   ${cats.map((c,ci)=>`<h3 class="lbl" data-catsec="${ci}">${esc(c)}</h3><div class="grid" data-grid="${ci}">${menu.items.filter(i=>i.cat===c).map(tile).join('')}</div>`).join('')}
+  </section><aside class="cart" data-t="cart"><div class="chead"><h2>${({foodpanda:'Foodpanda order',whatsapp:'Delivery',mashion:'Stall order',dine_in:'Dine-in',takeaway:'Takeaway'})[ch]}</h2>${fpMode?'<span class="badge b-info" data-t="fp-nopay">No payment step</span>':''}<button class="btn small ghost" id="clear" data-t="clear" title="Clear (Esc)">Clear</button></div>
+   ${!fpMode?`<div class="cf" data-t="custbox">${d.channel==='whatsapp'?'<div class="lbl">Phone first</div>':''}<div class="csearch"><input id="cphone" data-t="cphone" placeholder="${d.channel==='whatsapp'?'Phone 03XXXXXXXXX':'Phone (optional)'}" value="${esc(d.customer?.phone)}" inputmode="tel" autocomplete="off"><div id="csug" class="csug" data-t="csug"></div></div>
+     <div id="cinfo" data-t="cinfo"></div>
+     <input id="cname" data-t="cname" placeholder="Name${d.channel==='whatsapp'?'':' (optional)'}" value="${esc(d.customer?.name)}">${d.channel==='whatsapp'?`<select id="zone" data-t="zone"><option value="">Zone…</option>${App.zones.map(z=>`<option value="${z.id}" ${d.delivery?.zone===z.id?'selected':''}>${z.name} – ${L.rs(z.customerCharge)} (${esc(z.areas.slice(0,40))}…)</option>`).join('')}</select><input id="caddr" data-t="caddr" placeholder="Address / pin" value="${esc(d.customer?.address)}"><input id="clmk" data-t="clandmark" placeholder="Landmark / map link (optional)" value="${esc(d.customer?.landmark)}">`:''}</div>`:''}
+   ${fpMode?`<div class="cf"><label class="lbl" for="fpid">Foodpanda order no (required)</label><input id="fpid" data-t="fpid" placeholder="e.g. p25h-2644-xxxx" value="${esc(d.fp?.orderId)}"><small class="muted">No phone, name or payment needed — Foodpanda settles.</small><details class="fpt"><summary>FP app total differs?</summary><input id="fptotal" data-t="fptotal" inputmode="numeric" placeholder="FP app total (if different)" value="${d.fp?.total??''}"></details></div>`:''}
+   <ul class="lines">${d.lines.map((l,i)=>`<li data-line="${i}"><div><b>${l.qty}× ${esc(l.name)}</b>${l.heat2?` <span class="heat h-${l.heat.replace(/ /g,'')}">T ${l.heat}</span> <span class="heat h-${l.heat2.replace(/ /g,'')}">S ${l.heat2}</span>`:l.heat?` <span class="heat h-${l.heat.replace(/ /g,'')}">${l.heat}</span>`:''}${(l.addons||[]).map(a=>`<div class="sub">+ ${esc(a.name)} ${a.price?L.rs(a.price):''}</div>`).join('')}${l.note?`<div class="sub note">“${esc(l.note)}”</div>`:''}</div>
+     <div class="lr"><button class="btn small ghost" data-foc="${i}" data-t="foc-line-${i}" title="Free of charge">${l.foc?'Undo FOC':'FOC'}</button><button class="btn small" data-qm="${i}" aria-label="Less">−</button><button class="btn small" data-qp="${i}" aria-label="More">+</button><span class="amt num">${l.foc?`<b class="foc" data-t="line-foc-${i}">FOC</b>`:L.rs(L.lineTotal(l))}</span><button class="btn small ghost" data-del="${i}" aria-label="Remove">✕</button></div></li>`).join('')||'<li class="empty">Tap menu items to add</li>'}</ul>
+   ${App.undo?`<div class="undobar" data-t="undo-bar"><span>Removed ${App.undo.line.qty}× ${esc(App.undo.line.name)}</span><button class="btn small" data-t="undo">Undo</button></div>`:''}
+   <textarea id="onote" data-t="onote" placeholder="Order note" rows="1">${esc(d.note)}</textarea>
+   <div class="cfoot">${upsell.length?`<div class="upsell" data-t="upsell"><span>No drink yet</span>${upsell.map(i=>`<button class="btn small" data-up="${i.id}" data-t="upsell-${i.id}">+ ${esc(i.name)} <span class="num">${i.price}</span></button>`).join('')}</div>`:''}
+    <div class="tot"><div><span>Subtotal</span><span class="num" data-t="subtotal">${L.rs(t.subtotal)}</span></div>${t.discount?`<div><span>Discount (${d.discount.kind}${d.discount.type==='pct'?' '+d.discount.value+'%':''})</span><span class="num" data-t="disc-amt">−${L.rs(t.discount)}</span></div>`:''}
+    ${t.delivery?`<div><span>Delivery ${d.delivery.zone}</span><span class="num" data-t="deliv">${L.rs(t.delivery)}</span></div>`:''}${t.gst?`<div><span>GST</span><span class="num">${L.rs(t.gst)}</span></div>`:''}
+    <div class="grand"><span>${fpMode?'Foodpanda total':'Total'}</span><span class="num" data-t="total">${L.rs(t.total)}</span></div></div>
+   <div class="cbtns"><button class="btn ghost" id="disc" data-t="discount">Discount / staff / comp</button><button class="btn primary big" id="checkout" data-t="checkout" ${d.lines.length?'':'disabled'}>${fpMode?'Send to kitchen & print':`Charge ${L.rs(t.total)}`} <kbd>↵</kbd></button></div></div>
+   ${App.done?doneCard(App.done):''}</aside></div>`;
+  $$('[data-cat]').forEach(b=>b.onclick=()=>jumpCat(+b.dataset.cat));
+  $$('[data-fav]').forEach(b=>b.onclick=()=>safe(()=>addItem(b.dataset.fav,heats,{heat:b.dataset.heat||null})));
+  $$('[data-up]').forEach(b=>b.onclick=()=>safe(()=>addItem(b.dataset.up,heats)));
+  $('[data-t=undo]')&&($('[data-t=undo]').onclick=async()=>{ const u=App.undo; if(!u) return; clearTimeout(u.t); App.undo=null; d.lines.splice(Math.min(u.i,d.lines.length),0,u.line); await saveDraft(); renderPOS(); });
+  bindDone();
+  $$('[data-ch]').forEach(b=>b.onclick=async()=>{ App.done=null; const k=b.dataset.ch; const prev=menuKey(d);
     if(k==='dine_in'||k==='takeaway'){ d.channel='instore'; d.type=k; d.delivery=null; d.fp=null; d.customer=null; } else { d.channel=k; d.type='delivery'; if(k!=='whatsapp'){d.delivery=null;d.customer=null;} if(k!=='foodpanda') d.fp=null; }
     if(menuKey(d)!==prev && d.lines.length){ d.lines=[]; toast('Cart cleared: different price list'); }
     await saveDraft(); renderPOS(); });
-  $$('[data-item]').forEach(b=>b.onclick=()=>safe(()=>addItem(b.dataset.item,heats)));
+  $$('[data-item]').forEach(b=>b.onclick=()=>safe(()=>tapItem(b.dataset.item,heats)));
   $$('[data-qp]').forEach(b=>b.onclick=async()=>{ const l=d.lines[b.dataset.qp]; if(l.qty<99) l.qty++; await saveDraft(); renderPOS(); });
   $$('[data-qm]').forEach(b=>b.onclick=async()=>{ const l=d.lines[b.dataset.qm]; if(l.qty>1) l.qty--; await saveDraft(); renderPOS(); });
   $$('[data-foc]').forEach(b=>b.onclick=()=>safe(async()=>{ const l=d.lines[b.dataset.foc]; if(l.foc){ delete l.foc; await saveDraft(); return renderPOS(); }
     const r=await form('FOC item: '+l.name,`<p>${l.qty}× ${esc(l.name)} – value ${L.rs(L.lineList(l))}. Stock is still deducted; revenue Rs 0.</p><label>Reason (required)<input name="reason" data-t="foc-reason" maxlength="200"></label>`,r=>{ if(!r.reason.trim()) throw new Error('Reason is required'); return true; });
     if(!r) return; const a=await focApprove(`FOC ${l.qty}× ${l.name}: ${r.reason}`); if(!a){ toast('FOC not applied (owner/Waqar approval needed)','err'); return; }
     l.foc={reason:r.reason.trim(),by:a.name,byId:a.id,at:now()}; await saveDraft(); await logAct('foc-item',{draft:d.id,item:l.name,qty:l.qty,reason:l.foc.reason,approvedBy:a.name}); renderPOS(); }));
-  $$('[data-del]').forEach(b=>b.onclick=async()=>{ d.lines.splice(b.dataset.del,1); await saveDraft(); renderPOS(); });
+  $$('[data-del]').forEach(b=>b.onclick=async()=>{ const i=+b.dataset.del; const [line]=d.lines.splice(i,1); if(App.undo) clearTimeout(App.undo.t); App.undo={i,line,t:setTimeout(()=>{ App.undo=null; $('[data-t=undo-bar]')?.remove(); },5000)}; await saveDraft(); renderPOS(); });
   $('#onote').onchange=async e=>{ d.note=e.target.value.slice(0,500); await saveDraft(); };
   if($('#cphone')){ const ip=$('#cphone');
     ip.oninput=()=>custSuggest(ip.value);
@@ -164,9 +199,51 @@ async function renderPOS(){
     renderCustInfo(); }
   if($('#fpid')){ $('#fpid').onchange=async e=>{ d.fp={...(d.fp||{}),orderId:e.target.value.trim()}; await saveDraft(); };
     $('#fptotal').onchange=async e=>{ try{ d.fp={...(d.fp||{}),total:e.target.value===''?null:toInt(e.target.value,{min:0,max:1e6})}; }catch(x){ toast('FP total: '+x.message,'err'); } await saveDraft(); renderPOS(); }; }
-  $('#clear').onclick=async()=>{ App.draft=newDraft(kindOf(d)); await saveDraft(); renderPOS(); };
+  $('#clear').onclick=()=>clearCart();
   $('#disc').onclick=()=>safe(discountFlow); $('#checkout').onclick=()=>safe(checkout);
 }
+const heatTag=l=>l.heat2?` <span class="heat h-${l.heat.replace(/ /g,'')}">Tender ${l.heat}</span> <span class="heat h-${l.heat2.replace(/ /g,'')}">Slider ${l.heat2}</span>`:l.heat?` <span class="heat h-${l.heat.replace(/ /g,'')}">${l.heat}</span>`:'';
+const PHOTOS={combo1:'img/combo1.webp',combo2:'img/combo2.webp',combo3:'img/combo3.webp',mac:'img/mac.webp',mozz:'img/mozz.webp'};
+const phIcon=i=>/drink|bever/i.test(i.cat)?'🥤':/dessert/i.test(i.cat)?'🍩':/fries/i.test(i.id+i.name)?'🍟':/sauce|honey/i.test(i.id)?'🥣':/roll/i.test(i.id)?'🥖':'🍗';
+const shortName=n=>n.replace(/\s*\(.*\)\s*/,'').replace("Moe's ",'');
+const FAV_DEFAULT=[['combo1','Hot'],['combo2','Medium'],['combo3',null],['mac','Medium'],['mozz','Medium'],['baja',null]];
+// Favourites: 6 best sellers from order history (last 500 orders), padded with defaults; heat = most common for that item.
+async function favourites(menu){ const key=menuKey(App.draft); const os=(await db.all('orders')).filter(o=>!['void','cancelled'].includes(o.status)).sort((a,b)=>b.createdAt-a.createdAt).slice(0,500);
+  const cnt={}, hc={}; for(const o of os) for(const l of o.lines||[]){ cnt[l.itemId]=(cnt[l.itemId]||0)+(l.qty||1); if(l.heat){ const h=(hc[l.itemId]??={}); h[l.heat]=(h[l.heat]||0)+(l.qty||1); } }
+  const ok=id=>{ const i=menu.items.find(x=>x.id===id); return i&&i.on&&!i.sample?i:null; };
+  const ids=Object.keys(cnt).filter(ok).sort((a,b)=>cnt[b]-cnt[a]); for(const [id] of FAV_DEFAULT) if(!ids.includes(id)&&ok(id)) ids.push(id);
+  return ids.slice(0,6).map(id=>{ const i=ok(id); const h=hc[id]?Object.entries(hc[id]).sort((a,b)=>b[1]-a[1])[0][0]:(FAV_DEFAULT.find(f=>f[0]===id)||[])[1]; return {id,short:shortName(i.name),price:i.price,heat:i.heat&&id!=='combo3'?(h||'Medium'):null}; }); }
+function jumpCat(i){ const h=$(`[data-catsec="${i}"]`); if(h) h.scrollIntoView({block:'start',behavior:'smooth'}); $$('[data-cat]').forEach(b=>b.classList.toggle('on',+b.dataset.cat===i)); }
+async function clearCart(){ const d=App.draft; App.done=null; App.strip=null; App.draft=newDraft(kindOf(d)); await saveDraft(); renderPOS(); }
+// Tap a tile: heat items open the inline heat strip (one tap = add); Combo 3 opens its two-heat builder; Rush mode adds instantly with the usual heat.
+function tapItem(id,heats){ App.done=null; const d=App.draft; const it=App.menus[menuKey(d)].items.find(i=>i.id===id); if(!it) return;
+  if(!it.on) return addItem(id,heats); if(!it.heat||id==='combo3') return addItem(id,heats);
+  const def=d.prefHeat&&heats.includes(d.prefHeat)?d.prefHeat:'Medium';
+  if(App.rush) return addItem(id,heats,{heat:def});
+  closeStrip(); const tileEl=$(`[data-item="${id}"]`), grid=tileEl?.closest('.grid'); if(!grid) return addItem(id,heats);
+  tileEl.classList.add('sel'); const w=document.createElement('div'); w.className='hstrip'; w.dataset.t='heatstrip'; w.dataset.default=def; w.dataset.item=id;
+  w.innerHTML=`<div class="hs-h"><b>${esc(it.name)}</b> <span class="muted">tap a level to add · Esc cancel</span></div><div class="hs-b">${heats.map(h=>`<button type="button" class="hbtn h-${h.replace(/ /g,'')} ${h===def?'def':''}" data-sheat="${h}" data-t="sheat-${h.replace(/ /g,'')}">${h}</button>`).join('')}<button type="button" class="btn small ghost" data-t="strip-more">Add-ons / qty / note…</button><button type="button" class="btn small ghost" data-t="strip-cancel">Cancel</button></div>`;
+  grid.after(w); App.strip=w;
+  $$('[data-sheat]',w).forEach(b=>b.onclick=()=>{ closeStrip(); safe(()=>addItem(id,heats,{heat:b.dataset.sheat})); });
+  $('[data-t=strip-more]',w).onclick=()=>{ closeStrip(); safe(()=>addItem(id,heats,{full:true})); };
+  $('[data-t=strip-cancel]',w).onclick=closeStrip; }
+function closeStrip(){ App.strip?.remove(); App.strip=null; $$('.item.sel').forEach(x=>x.classList.remove('sel')); }
+const PAYNAME={cash:'Cash',hbl:'HBL',bah:'BAH',card:'Card',fp_online:'Foodpanda online'};
+function doneCard(x){ const o=x.order, t=o.totals||L.computeTotals(o,App.policy); const paid=(o.payments||[]); const fp=o.channel==='foodpanda';
+  return `<div class="donecard" data-t="done-card"><div class="dpill ${o.unpaid?'due':'ok'}">${fp?'Foodpanda · settles online':o.unpaid?(o.credit?'Pay later':'Due on delivery')+' · '+L.rs(t.total):'Paid · '+paid.map(p=>esc(PAYNAME[p.method]||p.method)+' '+L.rs(p.amount)).join(' + ')+(o.change?' · Change '+L.rs(o.change):'')}</div>
+   <div class="muted">${esc(({dine_in:'Dine-in',takeaway:'Takeaway',whatsapp:'Delivery',foodpanda:'Foodpanda',mashion:'Stall'})[kindOf(o)]||'')} order${o.fp?.orderId?' · FP '+esc(o.fp.orderId):''}</div>
+   <div class="dno num" data-t="done-no">#${esc(o.orderNo)}</div><div class="dsum">${(o.lines||[]).map(l=>`${l.qty}× ${esc(shortName(l.name))}${l.heat?` (${esc(l.heat2?l.heat+'/'+l.heat2:l.heat)})`:''}`).join(' · ')}</div>
+   <div class="row"><button class="btn" data-t="done-reprint">Reprint receipt</button><button class="btn" data-t="done-kreprint">Reprint kitchen</button></div>
+   <button class="btn primary big" data-t="done-new">+ New order <kbd>↵</kbd></button><div class="dprint" data-t="done-print">${esc(x.print||'Printing kitchen ticket and receipt…')}</div></div>`; }
+function bindDone(){ const c=$('[data-t=done-card]'); if(!c) return; const o=App.done.order;
+  $('[data-t=done-new]',c).onclick=()=>{ App.done=null; renderPOS(); };
+  $('[data-t=done-reprint]',c).onclick=()=>doReprint(o,'reprint'); $('[data-t=done-kreprint]',c).onclick=()=>doReprint(o,'kreprint'); }
+// Laptop shortcuts (POS only): 1-9 category, Enter charge / new order, Esc clear. Never while typing or with a dialog open.
+document.addEventListener('keydown',e=>{ if(!App.user||App.view!=='pos'||e.ctrlKey||e.metaKey||e.altKey) return; const tg=e.target;
+  if(tg&&(tg.closest?.('input,textarea,select,[contenteditable],button.qt')||tg.isContentEditable)) return; if($('.modal-bg')||$('#nalert')) return;
+  if(e.key==='Escape'){ e.preventDefault(); if(App.strip) return closeStrip(); if(App.done){ App.done=null; return renderPOS(); } return safe(clearCart); }
+  if(e.key==='Enter'){ if(tg&&tg.tagName==='BUTTON'&&tg!==document.body) return; e.preventDefault(); if(App.done){ App.done=null; return renderPOS(); } if(App.draft?.lines.length) return safe(checkout); return; }
+  if(/^[1-9]$/.test(e.key)&&$(`[data-cat="${+e.key-1}"]`)){ e.preventDefault(); jumpCat(+e.key-1); } });
 function setZone(id){ const z=App.zones.find(z=>z.id===id); App.draft.delivery=z?{zone:z.id,charge:z.customerCharge,riderFare:z.riderFare}:null; }
 const normPhone=L.normPhone;
 // ---------- Customer lookup on the POS ----------
@@ -193,7 +270,7 @@ async function addCustomerFlow(ph,{fromPayLater=false}={}){ const d=App.draft;
   await db.put('customers',c); await logAct('customer-add',{phone}); applyCustomer(c,false); toast(ex?'Customer updated (same phone)':'Customer added'); await saveDraft(); if(!fromPayLater) renderPOS(); return c; }
 async function renderCustInfo(){ const box=$('#cinfo'); if(!box) return; const d=App.draft; const c=d.customer?.phone?await custByPhone(d.customer.phone):null;
   if(!c){ box.innerHTML=d.customer?.phone&&L.validPhone(d.customer.phone)?`<div class="cnew">New number. <button type="button" class="btn small" id="addcust2" data-t="add-customer2">+ Add customer</button></div>`:''; $('#addcust2')&&($('#addcust2').onclick=()=>safe(()=>addCustomerFlow(d.customer.phone))); return; }
-  const p=await custPrefs(c); d.prefHeat=p.heat;
+  const p=await custPrefs(c); d.prefHeat=p.heat; d.prefPay=p.pay||null;
   box.innerHTML=`<div class="cprof" data-t="cprof"><div class="row"><b data-t="cp-name">${esc(c.name)}</b><span class="muted">${p.orders} orders · ${L.rs(p.spent)}${p.last?' · last '+L.fmtDT(p.last.createdAt):''}</span>${p.due?`<b class="bad" data-t="cp-due">Owes ${L.rs(p.due)}</b>`:''}</div>
     ${c.notes?`<div class="cnote" data-t="cp-notes">⚠ ${esc(c.notes)}</div>`:''}
     <div class="prefs" data-t="cp-prefs">${p.heat?`<span class="heat h-${p.heat.replace(/ /g,'')}" data-t="cp-heat">Usual: ${esc(p.heat)}</span>`:''}${p.items.length?`<span>Fav: ${p.items.map(i=>esc(i.name)).join(', ')}</span>`:''}${p.addons.length?`<span>Add-ons: ${p.addons.map(i=>esc(i.name)).join(', ')}</span>`:''}${p.drinks.length?`<span>Drinks: ${p.drinks.map(i=>esc(i.name)).join(', ')}</span>`:''}${p.pay?`<span>Pays: ${esc(PAYN(p.pay))}</span>`:''}${p.address?`<span>Addr: ${esc(p.address.slice(0,50))}</span>`:''}</div>
@@ -203,17 +280,22 @@ async function repeatLast(o){ const d=App.draft; const menu=App.menus[menuKey(d)
   for(const l of o.lines||[]){ const it=menu.items.find(i=>i.id===l.itemId); if(!it||!it.on){ missing.push(l.name); continue; }
     d.lines.push({itemId:it.id,name:it.name,qty:l.qty,unitPrice:it.price,heat:it.heat?(l.heat||d.prefHeat||null):null,note:l.note||'',sample:!!it.sample,addons:(l.addons||[]).map(a=>{const x=(menu.addons||[]).find(z=>z.id===a.id); return x?{id:x.id,name:x.name,price:x.price}:null;}).filter(Boolean)}); }
   await saveDraft(); toast(missing.length?'Repeated; not available: '+missing.join(', '):'Last order added – check and charge'); renderPOS(); }
-async function addItem(id,heats){ const d=App.draft; const mk=menuKey(d); const it=App.menus[mk].items.find(i=>i.id===id);
+async function addItem(id,heats,opt={}){ const d=App.draft; const mk=menuKey(d); const it=App.menus[mk].items.find(i=>i.id===id);
   if(!it) return; if(!it.on){ toast(it.name+' is SOLD OUT','err'); return; }
   const addons=App.menus[mk].addons||[];
   const wantsMods=it.heat || (addons.length && !['Extras','Drinks','Beverages','Dessert'].includes(it.cat) && !it.sample);
-  if(wantsMods){
-    const r=await form(it.name,`${it.heat?`<fieldset class="heats"><legend>Heat level</legend>${heats.map((h,i)=>`<label class="radio"><input type="radio" name="heat" value="${h}" ${(App.draft.prefHeat&&heats.includes(App.draft.prefHeat)?h===App.draft.prefHeat:i===1)?'checked':''} data-t="heat-${h.replace(/ /g,'')}"> ${h}</label>`).join('')}</fieldset>`:''}
+  if(it.heat&&id!=='combo3'&&opt.heat&&heats.includes(opt.heat)&&!opt.full){
+    const ex=d.lines.find(l=>l.itemId===it.id&&l.heat===opt.heat&&!l.heat2&&!(l.addons||[]).length&&!l.note&&!l.foc);
+    if(ex) ex.qty++; else d.lines.push({itemId:it.id,name:it.name,qty:1,unitPrice:it.price,heat:opt.heat,note:'',sample:!!it.sample,addons:[]});
+  } else if(wantsMods){
+    const two=id==='combo3'&&it.heat, ph=App.draft.prefHeat&&heats.includes(App.draft.prefHeat)?App.draft.prefHeat:heats[1];
+    const hset=(nm,lg,pre)=>`<fieldset class="heats" data-t="${nm}-set"><legend>${lg}</legend>${heats.map(h=>`<label class="radio hpick h-${h.replace(/ /g,'')}"><input type="radio" name="${nm}" value="${h}" ${h===pre?'checked':''} data-t="${nm}-${h.replace(/ /g,'')}"> ${h}</label>`).join('')}</fieldset>`;
+    const r=await form(two?'Combo 3 – one tender + one slider':it.name,`${two?hset('heat','Tender heat',opt.heat||ph)+hset('heat2','Slider heat',ph):it.heat?hset('heat','Heat level',opt.heat&&heats.includes(opt.heat)?opt.heat:ph):''}
       ${addons.length?`<fieldset><legend>Add-ons</legend>${addons.map(a=>`<label class="radio"><input type="checkbox" name="ad_${a.id}" data-t="addon-${a.id}"> ${esc(a.name)} ${L.rs(a.price)}</label>`).join('')}</fieldset>`:''}
       <label>Qty<input name="qty" value="1" inputmode="numeric" data-t="qty"></label><label>Note for kitchen<input name="note" maxlength="200" data-t="lnote"></label>`,
-      r=>{ toInt(r.qty,{min:1,max:99}); if(it.heat && !heats.includes(r.heat)) throw new Error('Pick a heat level'); return true; },{ok:'Add'});
+      r=>{ toInt(r.qty,{min:1,max:99}); if(it.heat && !heats.includes(r.heat)) throw new Error('Pick a heat level'); if(two&&!heats.includes(r.heat2)) throw new Error('Pick the slider heat'); return true; },{ok:'Add'});
     if(!r) return;
-    d.lines.push({itemId:it.id,name:it.name,qty:toInt(r.qty,{min:1,max:99}),unitPrice:it.price,heat:it.heat?r.heat:null,note:(r.note||'').trim(),sample:!!it.sample,
+    d.lines.push({itemId:it.id,name:it.name,qty:toInt(r.qty,{min:1,max:99}),unitPrice:it.price,heat:it.heat?r.heat:null,...(two?{heat2:r.heat2}:{}),note:(r.note||'').trim(),sample:!!it.sample,
       addons:addons.filter(a=>r['ad_'+a.id]).map(a=>({id:a.id,name:a.name,price:a.price}))});
   } else {
     const ex=d.lines.find(l=>l.itemId===it.id&&!l.heat&&!(l.addons||[]).length&&!l.note); if(ex) ex.qty++; else d.lines.push({itemId:it.id,name:it.name,qty:1,unitPrice:it.price,heat:null,note:'',addons:[],sample:!!it.sample});
@@ -250,9 +332,11 @@ async function quickPay(d,t,methods){ const T=t.total, has=id=>methods.some(m=>m
     ${T>0&&d.channel!=='foodpanda'?row('later','Pay Later / Tab',d.customer?.name?esc(d.customer.name)+"'s tab – not drawer cash":'needs customer phone + name',L.rs(T)):''}
   </div>`;
   const blank=Object.fromEntries(methods.map(m=>['p_'+m.id,''])); const mk=o=>({...blank,tendered:'',pref:'',...o});
-  return await new Promise(res=>{ const p=modal('Charge',body,{ok:'More options…',cancel:'Cancel',wide:true}); p.then(v=>res(v?'split':null));
+  return await new Promise(res=>{ const p=modal('Charge '+L.rs(T),body,{ok:'More options…',cancel:'Back to cart',wide:true,inline:true});
+    if(d.prefPay){ const u=$(`[data-t=q-${d.prefPay}]`)||(d.prefPay==='cash'?$('[data-t=q-cashrow]'):null); if(u){ u.classList.add('usual'); u.insertAdjacentHTML('afterbegin','<span class="ubadge" data-t="q-usual">Usual</span>'); } } p.then(v=>res(v?'split':null));
     const ok=$('[data-t=modal-ok]'); if(ok){ ok.classList.remove('primary'); ok.dataset.t='pay-split'; ok.classList.add('ghost'); }
     const done=v=>{ closeModal(); res(v); };
+    if($('.modal-bg.inline')){ const ql=$('[data-t=q-splitrow] .ql'); if(ql) ['q-split-rem','q-split-change'].forEach(k=>{ const e=$(`[data-t=${k}]`); if(e) ql.append(e); }); const ad=$('[data-t=q-split-add]'); if(ad){ ad.textContent='+'; ad.title='Add part'; ad.setAttribute('aria-label','Add part'); } const g=$('[data-t=q-split-go]'); if(g) g.textContent='Place split'; }
     $$('[data-tender]').forEach(b=>b.onclick=()=>done(mk({p_cash:String(T),tendered:b.dataset.tender})));
     const cust=()=>{ const v=parseInt(String($('[data-t=q-custom]').value).replace(/\D/g,''),10); if(!(v>=T)) return modalErr(`Custom cash must be at least ${L.rs(T)}`); done(mk({p_cash:String(T),tendered:String(v)})); };
     const cg=$('[data-t=q-custom-go]'); if(cg){ cg.onclick=cust; $('[data-t=q-custom]').onkeydown=e=>{ if(e.key==='Enter'){ e.preventDefault(); cust(); } }; }
@@ -278,12 +362,14 @@ async function quickPay(d,t,methods){ const T=t.total, has=id=>methods.some(m=>m
 async function checkout(){ const d=App.draft; if(!d.lines.length) return;
   if(d.customer?.phone){ d.customer.phone=L.normPhone(d.customer.phone); if(!L.validPhone(d.customer.phone)) throw new Error('Phone must look like 03XXXXXXXXX or +92…'); }
   if(d.channel==='whatsapp'){ if(!d.customer?.name||!d.customer?.phone) throw new Error('WhatsApp order needs customer name and phone'); if(!/^0\d{9,10}$/.test(d.customer.phone)) throw new Error('Phone must look like 03XXXXXXXXX'); if(!d.delivery) throw new Error('Pick a delivery zone'); }
-  if(d.channel==='foodpanda'){ if(!d.fp?.orderId||!/^[a-z0-9-]{4,30}$/i.test(d.fp.orderId)) throw new Error('Enter the Foodpanda order ID'); if(d.fp.total==null) throw new Error('Enter the Foodpanda total');
+  if(d.channel==='foodpanda'){ if(!d.fp?.orderId||!/^[a-z0-9-]{4,30}$/i.test(d.fp.orderId)) throw new Error('Enter the Foodpanda order ID'); 
     if((await db.all('orders')).some(o=>o.fp?.orderId===d.fp.orderId && o.id!==d.id && o.status!=='void')) throw new Error('This Foodpanda order ID is already entered'); }
   const t=L.computeTotals(d,App.policy);
   const methods=d.channel==='foodpanda'?[S.PAY_METHODS[4],...S.PAY_METHODS.slice(0,4)]:S.PAY_METHODS.filter(m=>m.id!=='fp_online');
   const pre=d.channel==='foodpanda'?{fp_online:t.total}:{cash:t.total};
-  let r=null; if(d.channel!=='foodpanda'){ const q=await quickPay(d,t,methods); if(q===null) return; if(q!=='split') r=q; }
+  let r=null; if(d.channel==='foodpanda') r={p_fp_online:String(t.total),p_cash:'',p_hbl:'',p_bah:'',p_card:'',tendered:'',pref:''};
+  else { r=null; }
+  if(!r&&d.channel!=='foodpanda'){ const q=await quickPay(d,t,methods); if(q===null) return; if(q!=='split') r=q; }
   if(!r) r=await form('Payment – '+L.rs(t.total),`<p class="muted">Split payment: enter amounts in more than one method. Cash tendered is only for change.</p>${methods.map(m=>`<label class="payrow">${esc(m.name)}<input name="p_${m.id}" inputmode="numeric" value="${pre[m.id]??''}" data-t="pay-${m.id}"></label>`).join('')}
     <label>Cash tendered (optional)<input name="tendered" inputmode="numeric" data-t="tendered"></label><label>Payment ref / note<input name="pref" data-t="pref" maxlength="100"></label>
     ${d.channel==='whatsapp'?'<label class="radio"><input type="checkbox" name="unpaid" data-t="unpaid"> COD – collect on delivery (record payment later)</label>':''}
@@ -291,17 +377,19 @@ async function checkout(){ const d=App.draft; if(!d.lines.length) return;
     r=>{ let sum=0; for(const m of methods){ if(r['p_'+m.id]!=='') sum+=toInt(r['p_'+m.id]); } if(r.tendered) toInt(r.tendered);
       if(r.paylater){ if(!d.customer?.name||!L.validPhone(d.customer?.phone||'')) throw new Error('Pay Later needs a customer: enter phone and name (or + Add customer)'); r.unpaid='on'; }
       if(!r.unpaid && sum!==t.total) throw new Error(`Payments add up to ${L.rs(sum)}; total is ${L.rs(t.total)}`); if(r.unpaid && sum>t.total) throw new Error('Overpaid');
-      if(r.tendered && r.p_cash && toInt(r.tendered)<toInt(r.p_cash)) throw new Error('Tendered is less than the cash amount'); return true; },{ok:'Complete sale',wide:true});
+      if(r.tendered && r.p_cash && toInt(r.tendered)<toInt(r.p_cash)) throw new Error('Tendered is less than the cash amount'); return true; },{ok:'Complete sale',wide:true,inline:true});
   if(!r) return;
   const payments=methods.filter(m=>r['p_'+m.id]!==''&&toInt(r['p_'+m.id])>0).map(m=>({method:m.id,amount:toInt(r['p_'+m.id]),at:now(),by:App.user.id,ref:(r.pref||'').trim()}));
   const _sh=(await shiftsFor(L.businessDate(now()),d.location||App.loc)).find(x=>!x.closedAt); const order={...d,payments,refunds:[],status:'open',createdAt:now(),shiftId:_sh?.id||null,businessDate:L.businessDate(now()),staffId:App.user.id,staffName:App.user.name,
     device:await db.kvGet('deviceId'),totals:t,change:r.tendered&&r.p_cash?toInt(r.tendered)-toInt(r.p_cash):0,unpaid:!!(r.unpaid||r.paylater),credit:!!r.paylater};
   if(d.channel==='whatsapp'||d.channel==='phone') order.flow={kind:'delivery',status:'accepted',ts:{accepted:order.createdAt},by:{accepted:App.user.name}};
   const saved=await commitOrder(order);
-  App.draft=newDraft(kindOf(d)); await saveDraft();
-  toast(`Order #${saved.orderNo} saved${order.change?` · change ${L.rs(order.change)}`:''}`); App.lastOrder=saved; renderPOS();
+  App.draft=newDraft(kindOf(d)); App.draft.prefPay=null; await saveDraft();
+  toast(`Order #${saved.orderNo} saved${order.change?` · change ${L.rs(order.change)}`:''}`); App.lastOrder=saved; const dn=App.done={order:saved}; if(App.view==='pos') renderPOS();
+  const setP=m=>{ if(App.done===dn){ dn.print=m; const el=$('[data-t=done-print]'); if(el) el.textContent=m; } };
   // printing is fire-and-forget: never blocks the sale
-  P.queue('kitchen',saved,App.settings).then(()=>P.queue('receipt',saved,App.settings)).catch(()=>{}).finally(renderStatus);
+  P.queue('kitchen',saved,App.settings).then(()=>P.queue('receipt',saved,App.settings)).then(()=>setP('✓ Kitchen ticket and receipt sent to printer')).catch(()=>setP('Printer problem – use Reprint')).finally(renderStatus);
+  if(App.rush) setTimeout(()=>{ if(App.done===dn){ App.done=null; if(App.view==='pos') renderPOS(); } },4000);
 }
 // Transactional commit: order + stock deductions + customer + order-number counter + log in ONE IndexedDB transaction. Idempotent on order.id.
 const inflight=new Map();
@@ -346,10 +434,10 @@ async function renderOrders(bd){ bd=bd||App.ordersDate||L.businessDate(now()); A
     <input id="ofq" data-t="ofq" type="search" placeholder="Search name, phone, order no" value="${esc(f.q)}"></div>
    <div class="otwrap"><table class="tbl otable" data-t="orders"><thead><tr>${th('no','#')}${th('customer','Customer')}<th>Items</th>${th('channel','Channel')}${th('time','Time')}${th('status','Status')}${th('total','Total')}<th></th></tr></thead><tbody>
    ${os.map(o=>{const t=L.computeTotals(o,App.policy); const n=(o.lines||[]).length; return `<tr data-o="${o.id}" data-no="${esc(o.orderNo??o.fp?.orderId)}" class="orow st-${o.status}" tabindex="0">
-   <td class="ono">#${esc(o.orderNo??'')}</td><td>${o.customer?.name||o.customer?.phone?`<b>${esc(o.customer?.name||'')}</b><br><small class="muted">${esc(o.customer?.phone||'')}</small>`:'<span class="muted">Walk-in</span>'}</td>
+   <td class="ono"><button class="linkbtn" data-act="detail" data-t="odetail" title="Details: refund, void, Speedway…">#${esc(o.orderNo??'')}</button></td><td>${o.customer?.name||o.customer?.phone?`<b>${esc(o.customer?.name||'')}</b><br><small class="muted">${esc(o.customer?.phone||'')}</small>`:'<span class="muted">Walk-in</span>'}</td>
    <td class="oitems">${(o.lines||[]).map(l=>`${l.qty}× ${esc(l.name)}`).join(', ')||(o.fp?.itemsPending?'<i>items pending</i>':'')}${n>2?`<br><small class="muted">${n} items</small>`:''}</td>
-   <td>${chPill(o)}</td><td><span data-t="orel">${relTime(o.createdAt)}</span><br><small class="muted">${L.fmtTime(o.createdAt)} · ${esc(o.businessDate)}</small></td><td>${stPill(o)}</td><td class="ototal"><b>${L.rs(t.total)}</b></td>
-   <td class="acts"><div class="oacts">${(()=>{ const dead=['void','cancelled'].includes(o.status)||['void','cancelled'].includes(stKey(o)); const due=dead?0:L.due(o,App.policy); return due>0?`<button class="btn small primary opay" data-act="pay" data-t="row-pay" title="Take payment">Pay ${L.rs(due)}</button>`:''; })()}<button class="ibtn" data-act="reprint" data-t="reprint" title="Print receipt" aria-label="Print receipt">🧾</button><button class="ibtn" data-act="kreprint" data-t="kreprint" title="Print kitchen ticket" aria-label="Print kitchen ticket">🍳</button><button class="ibtn" data-act="detail" data-t="odetail" title="More: refund, void, Speedway…" aria-label="More actions">⋯</button></div></td></tr>`}).join('')||`<tr><td colspan="8" class="muted" data-t="onone">No orders match.</td></tr>`}</tbody></table></div></div>`;
+   <td>${chPill(o)}</td><td><span data-t="orel">${relTime(o.createdAt)}</span><br><small class="muted">${L.fmtTime(o.createdAt)} · ${esc(o.businessDate)}</small></td><td>${stPill(o)}</td><td class="ototal num"><b>${L.rs(t.total)}</b></td>
+   <td class="acts"><div class="oacts">${(()=>{ const dead=['void','cancelled'].includes(o.status)||['void','cancelled'].includes(stKey(o)); const due=dead?0:L.due(o,App.policy); return `<span class="slot">${due>0?`<button class="btn small primary opay" data-act="pay" data-t="row-pay" title="Take payment">Pay <span class="num">${L.rs(due)}</span></button>`:''}</span>`; })()}<button class="btn small ghost" data-act="reprint" data-t="reprint" title="Print receipt">Receipt</button><button class="btn small ghost" data-act="kreprint" data-t="kreprint" title="Print kitchen ticket">Kitchen</button></div></td></tr>`}).join('')||`<tr><td colspan="8" class="muted" data-t="onone">No orders match.</td></tr>`}</tbody></table></div></div>`;
   App.ordersCache=Object.fromEntries(os.map(o=>[o.id,o]));
   $('#obd').onchange=e=>renderOrders(e.target.value);
   $('#obd2').onchange=e=>{ f.to=e.target.value; renderOrders(bd); };
@@ -418,7 +506,7 @@ async function renderKDS(){ if(!$('#main')||App.view!=='kds') return; const os=(
   const late=App.policy.lateMinutes||20, amber=App.policy.amberMinutes||12;
   $('#main').innerHTML=`<div class="kds" data-t="kds">${os.map(o=>{ const mins=Math.floor((now()-o.createdAt)/60000); return `<div class="ticket ${mins>=late?'late red':mins>=amber?'amber':''}" data-age="${mins>=late?'red':mins>=amber?'amber':'ok'}" data-k="${o.id}" data-no="${esc(o.orderNo)}" data-t="ticket">
     <div class="th"><b>#${esc(o.orderNo)}</b><span>${esc(chLabel(o))}</span><span class="timer" data-t="timer">${mins}m</span></div>
-    ${o.lines.map(l=>`<div class="kl"><b>${l.qty}× ${esc(l.name)}</b>${l.heat?` <span class="heat h-${l.heat.replace(/ /g,'')}">${l.heat}</span>`:''}${(l.addons||[]).map(a=>`<div class="sub">+ ${esc(a.name)}</div>`).join('')}${l.note?`<div class="sub note">${esc(l.note)}</div>`:''}</div>`).join('')}
+    ${o.lines.map(l=>`<div class="kl"><b>${l.qty}× ${esc(l.name)}</b>${heatTag(l)}${(l.addons||[]).map(a=>`<div class="sub">+ ${esc(a.name)}</div>`).join('')}${l.note?`<div class="sub note">${esc(l.note)}</div>`:''}</div>`).join('')}
     ${o.note?`<div class="note">${esc(o.note)}</div>`:''}${o.flow?`<div class="muted" data-t="kflow">${esc(L.flowLabel(o))}</div>`:''}${App.policy.kdsButtons?`${o.flow&&o.flow.status==="accepted"?`<button class="btn kstart" data-kstart="${o.id}" data-t="kstart">START</button>`:''}<button class="btn primary bump" data-bump="${o.id}" data-t="bump">READY ✓</button>`:''}</div>`;}).join('')||'<p class="muted big">No open orders</p>'}</div>`;
   $$('[data-kstart]').forEach(b=>b.onclick=()=>safe(async()=>{ await setFlow(b.dataset.kstart,'preparing'); renderKDS(); }));
   $$('[data-bump]').forEach(b=>b.onclick=()=>safe(async()=>{ const o=await db.get('orders',b.dataset.bump); if(o.flow&&['accepted','preparing'].includes(o.flow.status)){ await setFlow(o.id,'ready'); } else { o.status='done'; o.bumpedAt=now(); o.bumpedBy=App.user.name; await db.put('orders',o); } await logAct('ready',{order:o.orderNo}); renderKDS(); }));
@@ -726,16 +814,20 @@ async function renderLive(){ if(App.view!=='live'||!$('#main')) return; const os
       <div class="lh"><b class="lno">#${esc(o.orderNo)}</b><span>${esc(chLabel(o))}${o.flow?.kind==='pickup'?' · PICKUP':''}</span><span class="badge" data-t="lstatus">${esc(o.flow?L.flowLabel(o):'Kitchen')}</span><span class="timer">${mins}m</span></div>
       ${o.customer?.name||o.customer?.phone?`<div class="lc">${esc(o.customer.name||'')} ${esc(o.customer.phone||'')}${o.customer.address?` · <small>${esc(o.customer.address)}</small>`:''}</div>`:''}
       <div class="lc"><b>${L.rs(t.total)}</b> · ${payLine(o)}${o.rider?` · rider: <span data-t="lrider">${esc({cash:'cash',hbl:'HBL',bah:'BAHL',later:'pays later',none:'nothing due'}[o.rider.method])} ${L.rs(o.rider.amount)}</span><div class="riderpays" data-t="rider-pays">${esc(L.riderPaysText(o,App.policy))}</div>`:''}</div>
-      <div class="litems">${o.lines.map(l=>`${l.qty}× ${esc(l.name)}${l.heat?` <span class="heat h-${l.heat.replace(/ /g,'')}">${l.heat}</span>`:''}${(l.addons||[]).map(a=>' +'+esc(a.name)).join('')}`).join('<br>')}${o.note?`<div class="note">${esc(o.note)}</div>`:''}</div>
+      <div class="litems">${o.lines.map(l=>`${l.qty}× ${esc(l.name)}${heatTag(l)}${(l.addons||[]).map(a=>' +'+esc(a.name)).join('')}`).join('<br>')}${o.note?`<div class="note">${esc(o.note)}</div>`:''}</div>
       ${o.flow?`<div class="lts" data-t="lts">${tsLine(o)}</div>`:''}
       ${nl?`<button class="btn primary nextbtn" data-next="${o.id}" data-t="next">${esc(nl)} →</button>`:''}
       <div class="row lacts">${L.MSG_AT[s]?`<button class="btn small" data-wa="${o.id}" data-t="copy-wa">Copy WhatsApp message</button>`:''}${L.isDelivery(o)&&s==='accepted'?`<button class="btn small" data-sw="${o.id}" data-t="l-speedway">Copy for Speedway</button>`:''}${o.web&&o.web.payment_method!=='cod'&&!o.web.verified&&s!=='cancelled'?`<button class="btn small" data-ver="${o.id}" data-t="verify">Verify payment</button>`:''}${o.flow&&flowActive(o)&&s!=='out_for_delivery'?`<button class="btn small danger" data-cx="${o.id}" data-t="cancel">Cancel</button>`:''}</div></div>`; };
-  const act=os.filter(o=>!o.flow||flowActive(o)), fin=os.filter(o=>o.flow&&!flowActive(o));
-  $('#main').innerHTML=`<div class="pad1"><div class="row"><h2>Live orders</h2><span class="muted" data-t="online-state">${st.connected?`Website orders: ${st.realtime?'live ⚡':'polling'}${st.lastPull?' · checked '+L.fmtTime(st.lastPull):''}${st.queue?` · <b class="warn">${st.queue} update(s) waiting to send</b>`:''}`:'Website orders not connected (owner: Settings → Online orders)'}</span><button class="btn" id="soldout" data-t="soldout-btn">Sold-out items</button>${st.connected?'<button class="btn" id="pullnow" data-t="pull-now">Check now</button>':''}</div>
-    <div class="live" data-t="live">${act.map(card).join('')||'<p class="muted big">No active orders</p>'}</div>
-    ${fin.length?`<details><summary>Finished (last 3h): ${fin.length}</summary><div class="live">${fin.map(card).join('')}</div></details>`:''}
+  const act0=os.filter(o=>!o.flow||flowActive(o)), fin=os.filter(o=>o.flow&&!flowActive(o));
+  const STG={new:o=>o.flow?.status==='received',prep:o=>!o.flow||['accepted','preparing'].includes(o.flow.status),ready:o=>o.flow?.status==='ready',out:o=>o.flow?.status==='out_for_delivery'};
+  const chip=App.liveChip||'all', act=chip==='all'||chip==='done'?act0:act0.filter(STG[chip]);
+  const chips=`<div class="stagechips" data-t="stagechips">${[['all','All',act0.length],['new','New',act0.filter(STG.new).length],['prep','Preparing',act0.filter(STG.prep).length],['ready','Ready',act0.filter(STG.ready).length],['out','Out',act0.filter(STG.out).length],['done','Done',fin.length]].map(([k,n,c])=>`<button class="chip stg-${k} ${chip===k?'on':''}" data-stage="${k}" data-t="stage-${k}">${n} <b class="num">${c}</b></button>`).join('')}</div>`;
+  $('#main').innerHTML=`<div class="pad1"><div class="row"><h2>Orders</h2><span class="muted" data-t="online-state">${st.connected?`Website orders: ${st.realtime?'live ⚡':'polling'}${st.lastPull?' · checked '+L.fmtTime(st.lastPull):''}${st.queue?` · <b class="warn">${st.queue} update(s) waiting to send</b>`:''}`:'Website orders not connected (owner: Settings → Online orders)'}</span><button class="btn" id="soldout" data-t="soldout-btn">Sold-out items</button>${st.connected?'<button class="btn" id="pullnow" data-t="pull-now">Check now</button>':''}</div>
+    ${chips}${chip==='done'?`<div class="live" data-t="live-done">${fin.map(card).join('')||'<p class="muted big">Nothing finished in the last 3h</p>'}</div>`:''}<div class="live ${chip==='done'?'hidden':''}" data-t="live">${act.map(card).join('')||'<p class="muted big">No active orders</p>'}</div>
+    ${fin.length&&chip!=='done'?`<details><summary>Finished (last 3h): ${fin.length}</summary><div class="live">${fin.map(card).join('')}</div></details>`:''}
     <h3>Speedway – rider pays later</h3><table class="tbl" data-t="receivables"><tr><th>#</th><th>Date</th><th>Zone</th><th>Amount</th><th></th></tr>${pend.map(p=>`<tr data-rcv="${p.id}"><td>${esc(p.orderNo)}</td><td>${p.businessDate}</td><td>${esc(p.zone||'')}</td><td>${L.rs(p.amount)}</td><td><button class="btn small primary" data-settle="${p.id}" data-t="rider-settle">Settle</button></td></tr>`).join('')||'<tr><td colspan="5" class="muted">Nothing owed</td></tr>'}<tr><td colspan="3"><b>Total Speedway owes</b></td><td data-t="rcv-total"><b>${L.rs(pend.reduce((a,p)=>a+p.amount,0))}</b></td><td></td></tr></table></div>`;
   App.liveSig=JSON.stringify(os.map(o=>[o.id,o.flow?.status,o.status,o.rider?.settledAt]))+pend.length+st.queue;
+  $$('[data-stage]').forEach(b=>b.onclick=()=>{ App.liveChip=b.dataset.stage; App.liveSig=null; renderLive(); });
   $$('[data-next]').forEach(b=>b.onclick=()=>safe(()=>advance(b.dataset.next)));
   $$('[data-wa]').forEach(b=>b.onclick=async()=>copyWA(await db.get('orders',b.dataset.wa)));
   $$('[data-sw]').forEach(b=>b.onclick=async()=>copySpeedway(await db.get('orders',b.dataset.sw)));

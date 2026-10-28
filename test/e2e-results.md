@@ -24,7 +24,7 @@
 | 22 | WhatsApp | Returning customer auto-filled with zone; customer list | PASS |  |
 | 23 | WhatsApp | COD unpaid, then payment added later | PASS |  |
 | 24 | Foodpanda | FP price list used, no Reaper, FP total authoritative | PASS |  |
-| 25 | Foodpanda | Duplicate FP order ID blocked; missing ID/total blocked | PASS |  |
+| 25 | Foodpanda | Duplicate FP order ID blocked; missing ID blocked; FP total optional with no payment step | PASS |  |
 | 26 | Foodpanda | Switching price list clears cart; sold-out FP items blocked | PASS |  |
 | 27 | Foodpanda | FP commission 23% estimate and payout in report | PASS |  |
 | 28 | Payments | Split payment cash + HBL + BAH + card | PASS |  |
@@ -99,5 +99,11 @@
 | 97 | Layout | No horizontal overflow on any view at 1024x768 | PASS |  |
 | 98 | Layout | No horizontal overflow on any view at 768x1024 | PASS |  |
 | 99 | Orders | Row actions: 2 print icons + ⋯ in one line, Pay only when due, none on void; refund/void in detail | PASS |  |
+| 100 | Redesign | Heat strip adds with one tap; Combo 3 asks tender + slider heat separately | PASS |  |
+| 101 | Redesign | Favourites row has 6 items; upsell offers Baja/Lemonade with a combo | PASS |  |
+| 102 | Redesign | Done card after charge with big number; New order clears; Enter/Esc/number shortcuts never fire while typing | PASS |  |
+| 103 | Redesign | Removing a cart line shows a 5s undo bar that restores it | PASS |  |
+| 104 | Redesign | Slim nav: More menu; cashier sees locked owner pages; live count for all, sales snapshot only for owner | PASS |  |
+| 105 | Redesign | Orders hub tabs + stage chips; Rush toggles and persists | PASS |  |
 
-**99/99 passed**
+**105/105 passed**

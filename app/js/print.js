@@ -33,7 +33,9 @@ export function browserPrint(text){ pendingTexts.push(text); window.__lastBrowse
   if(!flushT) flushT=setTimeout(flushPrint,60); }
 function flushPrint(){ flushT=null; const texts=pendingTexts; pendingTexts=[]; if(!texts.length) return;
   let a=document.getElementById('printarea'); if(!a){ a=document.createElement('div'); a.id='printarea'; document.body.appendChild(a); }
-  a.replaceChildren(...texts.map(t=>{ const d=document.createElement('div'); d.className='pticket'; d.textContent=t; return d; }));
+  a.replaceChildren(...texts.map(t=>{ const d=document.createElement('div'); d.className='pticket';
+    if(t.startsWith("MOE'S HOT CHICKEN")){ const i=document.createElement('img'); i.src='img/logo-black.png'; i.className='plogo'; i.alt="Moe's Hot Chicken"; d.append(i); } // black logo on receipts
+    d.append(document.createTextNode(t)); return d; }));
   document.body.classList.add('printing');
   const done=()=>{ document.body.classList.remove('printing'); removeEventListener('afterprint',done); }; addEventListener('afterprint',done);
   try{ window.print(); }finally{ setTimeout(done,1000); } }

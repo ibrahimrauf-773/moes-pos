@@ -9,15 +9,19 @@ export const sleep=(p,ms=150)=>p.waitForTimeout(ms);
 export async function login(p,id,pin){ await p.click(`[data-staff="${id}"]`); await p.fill('[data-t=pin]',pin); await p.click('[data-k="OK"]'); await p.waitForSelector('[data-nav]'); await sleep(p); }
 export async function go(p,v){ await p.evaluate(v=>window.__pos.go(v),v); await sleep(p,250); }
 export async function channel(p,k){ await p.click(`[data-ch="${k}"]`); await sleep(p); }
-export async function add(p,id,{heat,addons=[],qty,note}={}){ await p.click(`[data-item="${id}"]`); await sleep(p);
-  if(await p.$('[data-t=modal]')){ if(heat) await p.check(`[data-t="heat-${heat.replace(/ /g,'')}"]`); for(const a of addons) await p.check(`[data-t="addon-${a}"]`);
+export async function add(p,id,{heat,heat2,addons=[],qty,note}={}){ await p.click(`[data-item="${id}"]`); await sleep(p);
+  const strip=await p.$('[data-t=heatstrip]');
+  if(strip){ if(addons.length||qty||note){ await p.click('[data-t=strip-more]'); await sleep(p); }
+    else { const h=heat||await strip.getAttribute('data-default'); await p.click(`[data-t="sheat-${h.replace(/ /g,'')}"]`); await sleep(p); return; } }
+  if(await p.$('[data-t=modal]')){ if(heat) await p.check(`[data-t="heat-${heat.replace(/ /g,'')}"]`); if(heat2) await p.check(`[data-t="heat2-${heat2.replace(/ /g,'')}"]`); for(const a of addons) await p.check(`[data-t="addon-${a}"]`);
     if(qty) await p.fill('[data-t=qty]',String(qty)); if(note) await p.fill('[data-t=lnote]',note); await p.click('[data-t=modal-ok]'); await sleep(p); } }
+export async function newOrder(p){ if(await p.$('[data-t=done-new]')){ await p.click('[data-t=done-new]'); await sleep(p); } }
 export async function whatsapp(p,{phone,name,addr='House 1',zone}){ await channel(p,'whatsapp'); await p.fill('[data-t=cphone]',phone); await p.press('[data-t=cphone]','Tab'); await sleep(p);
   await p.fill('[data-t=cname]',name); await p.press('[data-t=cname]','Tab'); await p.fill('[data-t=caddr]',addr); await p.press('[data-t=caddr]','Tab'); await p.selectOption('[data-t=zone]',zone); await sleep(p); }
 export async function fp(p,id,total){ await channel(p,'foodpanda'); await p.fill('[data-t=fpid]',id); await p.press('[data-t=fpid]','Tab'); await sleep(p); }
-export async function fpTotal(p,total){ await p.fill('[data-t=fptotal]',String(total)); await p.press('[data-t=fptotal]','Tab'); await sleep(p); }
+export async function fpTotal(p,total){ await p.evaluate(()=>{ const d=document.querySelector('details.fpt'); if(d) d.open=true; }); await p.fill('[data-t=fptotal]',String(total)); await p.press('[data-t=fptotal]','Tab'); await sleep(p); }
 export async function openCheckout(p){ await p.click('[data-t=checkout]'); await sleep(p); }
-export async function pay(p,pays,{unpaid=false,tendered}={}){ await openCheckout(p); const err=await p.$('[data-t=modal]'); if(!err) return {error:await toastText(p)};
+export async function pay(p,pays,{unpaid=false,tendered}={}){ await openCheckout(p); const err=await p.$('[data-t=modal]'); if(!err){ const tt=await toastText(p); return / saved/.test(tt)&&await p.$('[data-t=done-card]')?{ok:true}:{error:tt}; }
   if(await p.$('[data-t=pay-split]')){ await p.click('[data-t=pay-split]'); await sleep(p); }
   for(const i of await p.$$('[data-t^="pay-"]')) await i.fill('');
   for(const [m,a] of Object.entries(pays)) await p.fill(`[data-t="pay-${m}"]`,String(a)); if(unpaid) await p.check('[data-t=unpaid]'); if(tendered) await p.fill('[data-t=tendered]',String(tendered));
