@@ -227,3 +227,8 @@ nav{flex-wrap:wrap!important;overflow:visible!important;-webkit-mask-image:none!
 .spill{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:12px;font-weight:700;margin-right:6px}.spill.ok{background:#1f9d55;color:#fff}.spill.wait{background:#555;color:#fff}.spill.bad{background:#c0392b;color:#fff;animation:pulse 1.5s infinite}
 .pdot{display:inline-flex;align-items:center;gap:2px;margin-right:6px;cursor:help}.dot.off{background:#e74c3c}@keyframes pulse{50%{opacity:.6}}
 .chk{display:flex;gap:8px;align-items:center;margin:8px 0 12px}
+
+.otable td.acts{display:table-cell;white-space:nowrap;width:1%;text-align:right}.otable .oacts{display:flex;flex-wrap:nowrap;gap:6px;justify-content:flex-end;align-items:center}
+.otable .ibtn{width:34px;height:34px;flex:0 0 34px;border-radius:8px;border:1px solid #3a3a3a;background:#232323;color:#eee;font-size:16px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0}
+.otable .ibtn:hover{background:#2f2f2f;border-color:#ff6a00}.otable .opay{white-space:nowrap;min-height:34px}
+.otable td,.otable th{vertical-align:middle}.otable td.ototal{white-space:nowrap}

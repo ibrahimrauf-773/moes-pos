@@ -98,5 +98,6 @@
 | 96 | Layout | No horizontal overflow on any view at 1366x768 | PASS |  |
 | 97 | Layout | No horizontal overflow on any view at 1024x768 | PASS |  |
 | 98 | Layout | No horizontal overflow on any view at 768x1024 | PASS |  |
+| 99 | Orders | Row actions: 2 print icons + ⋯ in one line, Pay only when due, none on void; refund/void in detail | PASS |  |
 
-**98/98 passed**
+**99/99 passed**
