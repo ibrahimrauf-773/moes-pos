@@ -11,7 +11,7 @@ self.addEventListener('install',e=>{ e.waitUntil(caches.open(CACHE).then(c=>Prom
 self.addEventListener('activate',e=>{ e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k.startsWith('moes-pos-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim())); });
 const timeout=(p,ms)=>new Promise((res,rej)=>{ const t=setTimeout(()=>rej(new Error('timeout')),ms); p.then(v=>{clearTimeout(t);res(v);},e=>{clearTimeout(t);rej(e);}); });
 self.addEventListener('fetch',e=>{ const req=e.request; const u=new URL(req.url);
-  if(req.method!=='GET'||u.origin!==location.origin) return;
+  if(req.method!=='GET'||u.origin!==location.origin||u.pathname.endsWith('/version.json')) return;
   if(req.mode==='navigate'){ // page loads: try network briefly (gets updates), else cached app shell
     e.respondWith(timeout(fetch(req),3000).then(r=>{ if(r.ok){ const c=r.clone(); caches.open(CACHE).then(ca=>ca.put(INDEX,c)); return r; } throw new Error('bad'); })
       .catch(()=>caches.match(INDEX,{ignoreSearch:true}).then(r=>r||caches.match(new URL('./',self.registration.scope).href)))); return; }

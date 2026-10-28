@@ -6,6 +6,15 @@
 <link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/logo-180.png"><link rel="icon" href="icons/logo-96.png">
 <link rel="stylesheet" href="app.css"></head>
 <body><div class="fatal" id="loading">Loading Moe's POS…</div>
-<script>if('serviceWorker' in navigator&&location.protocol!=='file:'){navigator.serviceWorker.register('./sw.js',{scope:'./',updateViaCache:'none'}).catch(function(e){window.__swErr=String(e)});}</script>
+<script>window.__BUILD='dev';
+/* Self-updating: always check for a new build; when a new service worker takes over, reload once so new code actually runs. */
+if('serviceWorker' in navigator&&location.protocol!=='file:'){(function(){var sw=navigator.serviceWorker,had=!!sw.controller,done=false;
+ function reload(){ if(done) return; done=true; try{ if(window.__pos&&window.__pos.App&&window.__pos.App.draft&&(window.__pos.App.draft.lines||[]).length){ window.__updatePending=true; window.dispatchEvent(new Event('pos-update-ready')); done=false; return; } }catch(e){} location.reload(); }
+ sw.addEventListener('controllerchange',function(){ if(had) reload(); had=true; });
+ sw.register('./sw.js',{scope:'./',updateViaCache:'none'}).then(function(reg){ window.__swReg=reg;
+   function check(){ reg.update().catch(function(){});
+     if(window.__BUILD!=='dev') fetch('./version.json?'+Date.now(),{cache:'no-store'}).then(function(r){return r.ok?r.json():null}).then(function(v){ if(v&&v.version&&v.version!==window.__BUILD){ window.__newBuild=v.version; reg.update().then(function(){ if(reg.waiting) reg.waiting.postMessage('skipWaiting'); }).catch(function(){}); setTimeout(reload,8000); } }).catch(function(){}); }
+   check(); setInterval(check,120000); document.addEventListener('visibilitychange',function(){ if(!document.hidden) check(); });
+ }).catch(function(e){window.__swErr=String(e)});})();}</script>
 <script type="module" src="js/app.js"></script>
 <noscript>JavaScript is required.</noscript></body></html>

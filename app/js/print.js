@@ -2,6 +2,7 @@
 // Failures go to a persistent retry queue; sales are never blocked. Fallback: browser print with 80mm CSS.
 import * as db from './db.js'; import {receipt,kitchenTicket} from './escpos.js';
 export const isIPad=()=>/iPad/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1)||/iPhone|Android/.test(navigator.userAgent);
+export async function fallbackOn(){ const s=await db.kvGet('print',{}); return s.mode!=='off'&&s.fallback!==false; } // ON by default on every device
 export async function printingEnabled(){ const s=await db.kvGet('print',{mode:'auto'}); if(s.mode==='off') return false; if(s.mode==='on') return true; return !isIPad(); }
 const b64=u8=>{ let s=''; for(const c of u8) s+=String.fromCharCode(c); return btoa(s); };
 export async function helperUrl(){ return (await db.kvGet('print',{})).helper||'http://127.0.0.1:9123'; }
@@ -10,22 +11,30 @@ async function send(job){ const url=await helperUrl(); const ctl=new AbortContro
     if(!r.ok) throw new Error('helper '+r.status); return true; } finally{ clearTimeout(t); } }
 export function build(kind,order,settings){ return kind==='kitchen'?kitchenTicket(order):receipt(order,settings); }
 export async function queue(kind,order,settings,{force=false}={}){
-  if(!force&&!(await printingEnabled())) return {skipped:true};
   const doc=build(kind,order,settings);
+  // Helper not running (or printing off in Auto on iPad) -> Chrome/Safari print dialog with the 80mm layout, when the fallback is on (default).
+  if(!force&&!helperAlive&&await fallbackOn()){ browserPrint(doc.text.join('\n')); return {browser:true}; }
+  if(!force&&!(await printingEnabled())) return {skipped:true};
   const job={id:order.id+':'+kind+':'+Date.now(),kind,orderId:order.id,orderNo:order.orderNo,data:b64(doc.bytes()),text:doc.text.join('\n'),tries:0,status:'pending',at:Date.now()};
   await db.put('printJobs',job,true); return processQueue();
 }
 let busy=false;
 export async function processQueue(){ if(busy) return {busy:true}; busy=true; let ok=0, fail=0;
   try{ for(const j of (await db.all('printJobs')).filter(j=>j.status==='pending').sort((a,b)=>a.at-b.at)){
-      try{ await send(j); j.status='done'; ok++; }catch(e){ j.tries++; j.error=String(e.message||e); fail++; if(j.tries===1&&j.kind==='receipt'&&(await db.kvGet('print',{})).fallback){ try{ browserPrint(j.text); j.fallbackShown=true; }catch{} } }
+      try{ await send(j); j.status='done'; ok++; }catch(e){ j.tries++; j.error=String(e.message||e); fail++; if(j.tries===1&&!j.fallbackShown&&await fallbackOn()){ try{ browserPrint(j.text); j.fallbackShown=true; }catch{} } }
       await db.put('printJobs',j,true); if(fail) break; } }
   finally{ busy=false; } return {ok,fail}; }
 export async function pending(){ return (await db.all('printJobs')).filter(j=>j.status==='pending'); }
 // Browser fallback: render the 80mm text into an in-page print area and call window.print() synchronously
 // (no popup, so iPad Safari's popup blocker can't stop it). CSS @media print shows only #printarea.
-export function browserPrint(text){ let a=document.getElementById('printarea'); if(!a){ a=document.createElement('div'); a.id='printarea'; document.body.appendChild(a); }
-  a.textContent=text; window.__lastBrowserPrint=text; document.body.classList.add('printing');
+// Several tickets requested together (receipt + kitchen copies) are batched into ONE dialog, one 80mm page each.
+let pendingTexts=[], flushT=null;
+export function browserPrint(text){ pendingTexts.push(text); window.__lastBrowserPrint=text; window.__browserPrints=(window.__browserPrints||0)+1;
+  if(!flushT) flushT=setTimeout(flushPrint,60); }
+function flushPrint(){ flushT=null; const texts=pendingTexts; pendingTexts=[]; if(!texts.length) return;
+  let a=document.getElementById('printarea'); if(!a){ a=document.createElement('div'); a.id='printarea'; document.body.appendChild(a); }
+  a.replaceChildren(...texts.map(t=>{ const d=document.createElement('div'); d.className='ticket'; d.textContent=t; return d; }));
+  document.body.classList.add('printing');
   const done=()=>{ document.body.classList.remove('printing'); removeEventListener('afterprint',done); }; addEventListener('afterprint',done);
   try{ window.print(); }finally{ setTimeout(done,1000); } }
 // Helper liveness is cached so a tap can choose helper vs browser print without awaiting (keeps the user gesture for print()).

@@ -55,4 +55,4 @@ export async function syncNow(log=()=>{}){
 let timer=null;
 export function kick(){ clearTimeout(timer); timer=setTimeout(()=>tickFn&&tickFn(),800); }
 let tickFn=null;
-export function startAuto(onDone){ tickFn=()=>syncNow().then(r=>onDone&&onDone(r)).catch(()=>{}); setInterval(tickFn,5000); addEventListener('online',tickFn); addEventListener('pos-online-connected',()=>kick()); setTimeout(tickFn,2000); }
+export function startAuto(onDone){ tickFn=()=>syncNow().then(r=>onDone&&onDone(r)).catch(()=>{}); setInterval(tickFn,5000); addEventListener('online',tickFn); addEventListener('pos-online-connected',()=>kick()); setTimeout(tickFn,2000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) kick(); }); }

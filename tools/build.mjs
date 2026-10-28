@@ -9,6 +9,7 @@ const ver=h.digest('hex').slice(0,10);
 for(const f of files){ const d=path.join(out,f); fs.mkdirSync(path.dirname(d),{recursive:true}); let b=fs.readFileSync(path.join(src,f));
   if(f==='sw.js'){ const pre=['./',...files.filter(x=>x!=='sw.js'&&!x.startsWith('downloads')).map(x=>x.split(path.sep).join('/'))];
     let t=b.toString().replace("const VERSION='dev'",`const VERSION='${ver}'`).replace(/const FILES=\[[\s\S]*?\];/,`const FILES=${JSON.stringify(pre)};`);
-    if(!t.includes(`const FILES=${JSON.stringify(pre)}`)) throw new Error('sw FILES stamp failed'); b=Buffer.from(t); } fs.writeFileSync(d,b); }
+    if(!t.includes(`const FILES=${JSON.stringify(pre)}`)) throw new Error('sw FILES stamp failed'); b=Buffer.from(t); } if(f==='index.html') b=Buffer.from(b.toString().replace("window.__BUILD='dev'",`window.__BUILD='${ver}'`)); fs.writeFileSync(d,b); }
+fs.writeFileSync(path.join(out,'version.json'),JSON.stringify({version:ver,builtAt:new Date().toISOString()}));
 // Guard: no recipe content in bundle (checks for distinctive words from the private recipe file are done in tests)
 console.log(`built dist/ (${files.length} files, version ${ver})`);

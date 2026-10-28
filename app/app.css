@@ -140,3 +140,5 @@ input.num{width:90px}
 .btn.huge{min-height:80px;font-size:1.6em}
 #sndbtn{margin-right:6px}
 .kstart{margin-bottom:6px;width:100%}
+
+@media print{ body.printing{display:block!important;height:auto!important;overflow:visible!important} body.printing #printarea .ticket{white-space:pre;page-break-after:always;break-after:page} body.printing #printarea .ticket:last-child{page-break-after:auto;break-after:auto} @page{size:80mm auto;margin:3mm} }
