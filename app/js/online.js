@@ -52,15 +52,16 @@ export async function flush(){ await config(); if(!cfg.connected) return;
 // ---- realtime (phoenix protocol, no SDK) ----
 function rt(){ if(!running||ws||typeof WebSocket==='undefined') return;
   let s; try{ s=new WebSocket(cfg.url.replace(/^http/,'ws')+'/realtime/v1/websocket?apikey='+encodeURIComponent(cfg.anonKey)+'&vsn=1.0.0'); }catch(e){ return; }
-  ws=s; s.onopen=async()=>{ try{ s.send(JSON.stringify({topic:'realtime:pos-orders',event:'phx_join',ref:'1',payload:{config:{broadcast:{self:false},presence:{key:''},postgres_changes:[{event:'*',schema:'public',table:'online_orders'}]},access_token:await token()}}));
-      hb=setInterval(()=>{ try{ s.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'h'})); }catch(e){} },25000); }catch(e){ s.close(); } };
+  ws=s; s.onopen=async()=>{ try{ s.send(JSON.stringify({topic:'realtime:pos-orders',event:'phx_join',ref:'1',payload:{config:{broadcast:{self:false},presence:{key:''},postgres_changes:[{event:'*',schema:'public',table:'online_orders'}]},access_token:(s._tok=await token())}}));
+      hb=setInterval(async()=>{ try{ s.send(JSON.stringify({topic:'phoenix',event:'heartbeat',payload:{},ref:'h'})); const t=await token(); if(t!==s._tok){ s._tok=t; s.send(JSON.stringify({topic:'realtime:pos-orders',event:'access_token',payload:{access_token:t},ref:'t'})); } }catch(e){} },25000); }catch(e){ s.close(); } };
   s.onmessage=e=>{ let m; try{ m=JSON.parse(e.data); }catch(x){ return; }
-    if(m.event==='phx_reply'&&m.topic==='realtime:pos-orders'&&m.ref==='1'){ cfg._rt=m.payload?.status==='ok'; emit(); }
+    if(m.event==='phx_reply'&&m.topic==='realtime:pos-orders'&&m.ref==='1'){ cfg._rt=m.payload?.status==='ok'; emit(); if(cfg._rt) pull().catch(()=>{}); }
     if(m.event==='postgres_changes'||m.event==='INSERT'||m.event==='UPDATE'){ clearTimeout(rtTimer); rtTimer=setTimeout(()=>pull().catch(()=>{}),300); }
     if(m.event==='system'&&m.payload?.status==='error'){ cfg._rt=false; emit(); } };
   s.onclose=()=>{ clearInterval(hb); if(ws===s) ws=null; cfg._rt=false; emit(); if(running) setTimeout(rt,8000); };
   s.onerror=()=>{}; }
-async function tick(){ if(!running) return; try{ await flush(); }catch(e){} try{ await pull(); }catch(e){} }
+// Realtime is primary; while the socket is joined we only do a slow safety pull (every 5 min). When it is down, poll every pollMs (20s).
+async function tick(){ if(!running) return; try{ await flush(); }catch(e){} if(cfg._rt&&cfg.lastPull&&Date.now()-cfg.lastPull<300000) return; try{ await pull(); }catch(e){} }
 export async function start(){ await config(); if(!cfg.connected||running) return; running=true; await counts(); rt(); poll=setInterval(tick,cfg.pollMs||20000); tick();
   if(typeof addEventListener!=='undefined'){ addEventListener('online',tick); } }
 export function stop(){ running=false; clearInterval(poll); poll=null; if(ws){ const s=ws; ws=null; try{ s.close(); }catch(e){} } }

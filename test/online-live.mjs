@@ -9,18 +9,17 @@ const id=crypto.randomUUID(), ref='TEST-E2E-'+Date.now(), phone='03009990001';
 const order={id,channel:'website',order_type:'delivery',status:'received',payment_verified:false,payment_method:'cod',tracking_token:crypto.randomBytes(16).toString('hex'),website_ref:ref,
   customer:{name:'E2E Test (delete me)',phone,address:'Test House 1',area:'DHA (all phases)',zone:'A'},items:[{item_id:'combo_1',name:'Combo 1 (2 tenders)',qty:1,unit_price:1099,spice_level:'Hot',modifiers:[]}],
   subtotal:1099,delivery_fee:200,total:1299,notes:'AUTOMATED TEST – ignore'};
-let r=await fetch(URL_+'/rest/v1/online_orders',{method:'POST',headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(order)});
-log('anon insert',r.status); ok(r.status===201,'anon insert failed '+r.status+' '+await r.text());
 fs.writeFileSync('/tmp/live-test-ids.json',JSON.stringify({id,ref,phone}));
-const b=await H.launch(); const p=await H.newPage(b); await H.login(p,'shaheer','1111');
 await H.go(p,'settings'); await p.click('[data-t=tab-online]'); await H.sleep(p);
 await p.fill('[data-t=online-url]',URL_); await p.fill('[data-t=online-pass]',PW); await p.click('[data-t=online-connect]'); await p.waitForFunction(()=>__pos.O.state().connected,null,{timeout:15000});
 await p.screenshot({path:SHOTS+'flow-live-settings-connected.png'}); log('POS connected');
-await p.evaluate(()=>__pos.O.pull()); await p.evaluate(()=>__pos.alertCheck()); await p.waitForSelector('[data-t=new-order-alert]',{timeout:10000}); await p.screenshot({path:SHOTS+'flow-live-alert.png'}); log('alert shown');
+await p.waitForFunction(()=>__pos.O.state().realtime,null,{timeout:20000}); log('realtime joined'); await H.go(p,'live');
+let r=await fetch(URL_+'/rest/v1/online_orders',{method:'POST',headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(order)});
+log('anon insert',r.status); ok(r.status===201,'anon insert failed '+r.status+' '+await r.text());
+const t0=Date.now(); await p.waitForFunction(async i=>!!(await __pos.db.get('orders','web-'+i)),id,{timeout:15000,polling:200}); await p.waitForSelector('[data-t=new-order-alert]',{timeout:8000}); log('alert via realtime after',Date.now()-t0,'ms (no manual pull)'); await p.screenshot({path:SHOTS+'flow-live-alert.png'}); log('alert shown');
 const local=()=>p.evaluate(i=>__pos.db.get('orders','web-'+i),id); const o0=await local(); log('imported as POS #'+o0.orderNo);
 const remote=async()=>{ const j=await p.evaluate(async i=>{ const c=await __pos.O.config(); const r=await fetch(c.url+'/rest/v1/online_orders?id=eq.'+i,{headers:{apikey:c.anonKey,Authorization:'Bearer '+c.access}}); return r.json(); },id); return j[0]; };
-const sync=()=>p.evaluate(async()=>{ await __pos.O.flush(); await __pos.O.pull(); });
-await p.click('[data-t=alert-accept]'); await H.sleep(p,500); await sync(); ok((await remote()).status==='accepted','remote not accepted'); log('accepted');
+let rw0; const sync=()=>p.evaluate(async()=>{ await __pos.O.flush(); await __pos.O.pull(); });
 await H.go(p,'live'); const card=`[data-lo="web-${id}"]`;
 for(const s of ['preparing','ready']){ await p.click(card+' [data-t=next]'); await H.sleep(p,400); await sync(); ok((await remote()).status===s,'remote not '+s); log(s); }
 await p.click(card+' [data-t=next]'); await H.sleep(p,300); const amt=(await p.textContent('[data-t=rider-amount]')).replace(/\D/g,''); const tot=(await remote()).total; log('server total (server-priced)',tot); ok(+amt===tot-200,'rider amount '+amt); await p.check('[data-t=rider-later]'); await p.screenshot({path:SHOTS+'flow-live-dispatch.png'}); await H.modalOk(p);

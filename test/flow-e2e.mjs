@@ -33,6 +33,7 @@ test('Website delivery (COD): alert until Accept → Preparing → Waiting for r
   ok(await p.$('[data-t=new-order-alert]'),'no full-screen alert'); ok((await p.textContent('[data-t=alert-total]')).includes('1,299'),'alert total'); await p.screenshot({path:SHOTS+'flow-new-order-alert.png'});
   const o0=(await H.orders(p)).find(o=>o.id==='web-'+w.id); ok(o0&&o0.orderNo,'imported with POS number'); eq(o0.customer.phone.replace(/\D/g,'').slice(-10),'3001234561');
   await p.click('[data-t=alert-accept]'); await H.sleep(p,400); ok(!(await p.$('[data-t=new-order-alert]')),'alert still up');
+  await flush(p); eq(M.orders.get(w.id).pos_order_no,String(o0.orderNo),'pos_order_no written back on accept');
   await H.go(p,'live'); await p.screenshot({path:SHOTS+'flow-live-accepted.png'});
   const card=()=>p.$(`[data-t=lcard][data-lo="web-${w.id}"]`)||p.$('[data-t=lcard]');
   for(const want of ['preparing','ready']){ await p.click('[data-t=next]'); await H.sleep(p,300); eq((await H.lastOrder(p)).flow.status,want); }

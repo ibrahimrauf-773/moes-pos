@@ -549,6 +549,8 @@ async function setFlow(id,status,{remote={},mutate}={}){ const o=await db.get('o
   if(['ready','out_for_delivery','delivered'].includes(status)&&o.status==='open'){ o.status='done'; o.bumpedAt=t; o.bumpedBy=App.user?.name; }
   if(mutate) mutate(o); await db.put('orders',o); await logAct('flow-'+status,{order:o.orderNo});
   if(o.web) await O.enqueue({kind:'patch',remoteId:o.web.id,orderNo:o.orderNo,body:{status,status_timestamps:isoTs(o.flow.ts),...remote}});
+  // POS number goes in its own patch so a missing column grant can never block the status write.
+  if(o.web&&(status==='accepted'||!o.web.posNoSent)){ await O.enqueue({kind:'patch',remoteId:o.web.id,orderNo:o.orderNo,body:{pos_order_no:String(o.orderNo)}}); const x=await db.get('orders',o.id); x.web.posNoSent=true; await db.put('orders',x); }
   return o; }
 async function advance(id){ const o=await db.get('orders',id); if(!o) return;
   if(!o.flow){ if(o.status==='open'){ o.status='done'; o.bumpedAt=now(); o.bumpedBy=App.user.name; await db.put('orders',o); await logAct('ready',{order:o.orderNo}); toast('#'+o.orderNo+' ready'); } return refreshViews(); }
