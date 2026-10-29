@@ -79,5 +79,19 @@ test('Sold-out toggle upserts menu_availability; WhatsApp copy text at each stag
   const msgs=await ev(p,id=>__pos.db.get('orders',id).then(o=>['accepted','ready','out_for_delivery','delivered'].map(s=>__pos.L.customerMsg({...o,flow:{...o.flow,status:s}},__pos.L.MSG_AT[s]))),o.id);
   ok(msgs.every(m=>m&&m.includes(o.orderNo)),'msg missing order no'); await H.go(p,'live'); await p.click(`[data-lo="${o.id}"] [data-t=copy-wa]`); await H.sleep(p,300); await p.screenshot({path:SHOTS+'flow-copy-whatsapp.png'}); await p.ctx.close(); });
 
+test('Website Combo 3 heats: hub card, order detail and kitchen ticket (real website payload)', async()=>{ M.orders.clear(); M.patches=[];
+  // Real shape after the Supabase price trigger: one spice_level per line, no tender/slider split (website has a single spice picker).
+  const w=mkOrder(7,{pay:'cod'}); w.items=[{item_id:'combo_3',name:'Combo 3',qty:1,unit_price:1199,spice_level:'Hot',modifiers:[{item_id:'addon_extra_sauce',name:'Extra Sauce',price:120}],notes:'no pickles'}]; w.total=1519; M.orders.set(w.id,w);
+  const p=await H.newPage(b); await H.login(p,'shaheer','1111'); await connect(p); await flush(p); await H.sleep(p,300); if(await p.$('[data-t=alert-accept]')){ await p.click('[data-t=alert-accept]'); await H.sleep(p,300); }
+  const o=await ev(p,id=>__pos.db.get('orders',id),'web-'+w.id); eq([o.lines[0].itemId,o.lines[0].heat,o.lines[0].heat2??null],['combo3','Hot',null],'mapping');
+  await H.go(p,'live'); const card=await p.textContent(`[data-lo="web-${w.id}"]`); ok(/Combo 3/.test(card)&&/Hot/.test(card),'hub card heat: '+card);
+  await H.go(p,'orders'); await p.click(`tr[data-no="${o.orderNo}"] td.ono`); await H.sleep(p,300); const det=await p.textContent('[data-t=d-items]'); ok(/Hot/.test(det),'detail heat: '+det); await p.keyboard.press('Escape');
+  const kt=await ev(p,id=>__pos.db.get('orders',id).then(o=>__pos.P.build('kitchen',o).text.join('\n')),'web-'+w.id); ok(/HEAT: HOT/.test(kt),'ticket heat');
+  // If a Combo 3 line carries separate heats (as POS-entered ones do), all three surfaces show both.
+  await ev(p,async id=>{ const o=await __pos.db.get('orders',id); o.lines[0].heat2='Mild'; await __pos.db.put('orders',o); },'web-'+w.id);
+  await H.go(p,'live'); const c2=await p.textContent(`[data-lo="web-${w.id}"]`); ok(/Tender Hot/.test(c2)&&/Slider Mild/.test(c2),'hub both heats: '+c2);
+  await H.go(p,'orders'); await p.click(`tr[data-no="${o.orderNo}"] td.ono`); await H.sleep(p,300); const d2=await p.textContent('[data-t=d-items]'); ok(/Tender Hot \/ Slider Mild/.test(d2),'detail both heats: '+d2); await p.screenshot({path:SHOTS+'flow-web-combo3-detail.png'}); await p.keyboard.press('Escape');
+  const k2=await ev(p,id=>__pos.db.get('orders',id).then(o=>__pos.P.build('kitchen',o).text.join('\n')),'web-'+w.id); ok(/TENDER HEAT: HOT/.test(k2)&&/SLIDER HEAT: MILD/.test(k2),'ticket both heats'); await p.ctx.close(); });
+
 for(const [n,f] of T){ if(process.argv[2]&&!n.startsWith(process.argv[2])) continue; try{ await f(); results.push('PASS | '+n); }catch(e){ results.push('FAIL | '+n+' | '+e.message.split('\n')[0]); } console.log(results.at(-1)); }
 console.log(`\n${results.filter(r=>r.startsWith('PASS')).length}/${results.length} flow tests passed`); await b.close(); srv.close(); process.exit(0);
