@@ -270,7 +270,7 @@ export function customerMsg(o,kind,shop="Moe's Hot Chicken"){ const c=o.customer
 export const MSG_AT={accepted:'accepted',ready:'ready',out_for_delivery:'out_for_delivery',delivered:'delivered'};
 // Website order (online_orders row) -> POS order fields (lines/discount/delivery/payments/customer). webToPos maps item ids.
 export function webOrderToPos(w,{webToPos={},zones=[]}={}){ const c=w.customer||{};
-  const lines=(w.items||[]).map(i=>({itemId:webToPos[i.item_id]||i.item_id,webItemId:i.item_id,name:i.name,qty:i.qty||1,unitPrice:i.unit_price||0,heat:i.spice_level||null,note:i.notes||'',
+  const lines=(w.items||[]).map(i=>({itemId:webToPos[i.item_id]||i.item_id,webItemId:i.item_id,name:i.name,qty:i.qty||1,unitPrice:i.unit_price||0,heat:i.spice_level||null,...(i.slider_spice_level&&i.spice_level?{heat2:i.slider_spice_level}:{}),note:i.notes||'',
     addons:(i.modifiers||[]).map(m=>({id:webToPos[m.item_id]||m.item_id,name:m.name,price:m.price||0}))}));
   const z=zones.find(z=>z.id===c.zone);
   const bank={bank_hbl:'hbl',bank_bahl:'bah'}[w.payment_method];

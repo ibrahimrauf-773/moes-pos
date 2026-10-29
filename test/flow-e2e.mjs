@@ -93,5 +93,17 @@ test('Website Combo 3 heats: hub card, order detail and kitchen ticket (real web
   await H.go(p,'orders'); await p.click(`tr[data-no="${o.orderNo}"] td.ono`); await H.sleep(p,300); const d2=await p.textContent('[data-t=d-items]'); ok(/Tender Hot \/ Slider Mild/.test(d2),'detail both heats: '+d2); await p.screenshot({path:SHOTS+'flow-web-combo3-detail.png'}); await p.keyboard.press('Escape');
   const k2=await ev(p,id=>__pos.db.get('orders',id).then(o=>__pos.P.build('kitchen',o).text.join('\n')),'web-'+w.id); ok(/TENDER HEAT: HOT/.test(k2)&&/SLIDER HEAT: MILD/.test(k2),'ticket both heats'); await p.ctx.close(); });
 
+test('Website Combo 3 slider_spice_level: hub card, order detail and kitchen ticket (real website payload)', async()=>{ M.orders.clear(); M.patches=[];
+  // Real shape after the Supabase price trigger: one spice_level per line, no tender/slider split (website has a single spice picker).
+  const w=mkOrder(8,{pay:'cod'}); w.items=[{item_id:'combo_3',name:'Combo 3',qty:1,unit_price:1199,spice_level:'Hot',slider_spice_level:'Reaper',modifiers:[{item_id:'addon_extra_sauce',name:'Extra Sauce',price:120}],notes:'no pickles'},{item_id:'combo_1',name:'Combo 1',qty:1,unit_price:1099,spice_level:'Medium',slider_spice_level:null,modifiers:[],notes:''}]; w.total=2618; M.orders.set(w.id,w);
+  const p=await H.newPage(b); await H.login(p,'shaheer','1111'); await connect(p); await flush(p); await H.sleep(p,300); if(await p.$('[data-t=alert-accept]')){ await p.click('[data-t=alert-accept]'); await H.sleep(p,300); }
+  const o=await ev(p,id=>__pos.db.get('orders',id),'web-'+w.id); eq([o.lines[0].itemId,o.lines[0].heat,o.lines[0].heat2??null],['combo3','Hot','Reaper'],'mapping'); eq([o.lines[1].heat,o.lines[1].heat2??null],['Medium',null],'null slider = missing');
+  await H.go(p,'live'); const card=await p.textContent(`[data-lo="web-${w.id}"]`); ok(/Combo 3/.test(card)&&/Hot/.test(card),'hub card heat: '+card);
+  await H.go(p,'orders'); await p.click(`tr[data-no="${o.orderNo}"] td.ono`); await H.sleep(p,300); const det=await p.textContent('[data-t=d-items]'); ok(/Hot/.test(det),'detail heat: '+det); await p.keyboard.press('Escape');
+  const kt=await ev(p,id=>__pos.db.get('orders',id).then(o=>__pos.P.build('kitchen',o).text.join('\n')),'web-'+w.id); ok(/HEAT: HOT/.test(kt),'ticket heat');
+  await H.go(p,'live'); const c2=await p.textContent(`[data-lo="web-${w.id}"]`); ok(/Tender Hot/.test(c2)&&/Slider Reaper/.test(c2),'hub both heats: '+c2);
+  await H.go(p,'orders'); await p.click(`tr[data-no="${o.orderNo}"] td.ono`); await H.sleep(p,300); const d2=await p.textContent('[data-t=d-items]'); ok(/Tender Hot \/ Slider Reaper/.test(d2),'detail both heats: '+d2); await p.screenshot({path:SHOTS+'flow-web-combo3-slider-detail.png'}); await p.keyboard.press('Escape');
+  const k2=await ev(p,id=>__pos.db.get('orders',id).then(o=>__pos.P.build('kitchen',o).text.join('\n')),'web-'+w.id); ok(/   HEAT: MEDIUM/.test(k2)&&/TENDER HEAT: HOT/.test(k2)&&/SLIDER HEAT: REAPER/.test(k2),'ticket both heats'); await p.ctx.close(); });
+
 for(const [n,f] of T){ if(process.argv[2]&&!n.startsWith(process.argv[2])) continue; try{ await f(); results.push('PASS | '+n); }catch(e){ results.push('FAIL | '+n+' | '+e.message.split('\n')[0]); } console.log(results.at(-1)); }
 console.log(`\n${results.filter(r=>r.startsWith('PASS')).length}/${results.length} flow tests passed`); await b.close(); srv.close(); process.exit(0);
