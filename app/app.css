@@ -403,3 +403,30 @@ label.adchip input:focus-visible{outline:2px solid var(--brand);outline-offset:2
 /* 6 quick cash no wrap */
 .modal-bg.inline .qt{white-space:nowrap}
 @media (max-width:1180px){.modal-bg.inline .qt{font-size:var(--fs-xs);padding:0 4px}}
+/* ---- item popup (mockups/flow/item-popup, POS tokens) ---- */
+.modal.ip-modal{width:min(640px,100%);max-height:calc(100vh - 20px);padding:0;display:flex;flex-direction:column;overflow:hidden;background:var(--surface-1);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px #000c}
+.ip-modal h2{margin:0;padding:var(--s3) var(--s5);padding-right:56px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:var(--s3);font-size:var(--fs-xl)}
+.ip-modal .ip-price{color:var(--brand);font-weight:800}
+.ip-modal .mbody{flex:1;overflow:auto;padding:var(--s1) var(--s5) var(--s3)}
+.ip-modal .err{padding:0 var(--s5)}
+.ip-modal .mbtns{margin:0;padding:var(--s2) var(--s5);border-top:1px solid var(--line);display:flex;gap:var(--s3);align-items:center}
+.ip-modal .mbtns [data-t=modal-ok]{flex:1;min-height:56px;font-size:var(--fs-lg);font-weight:800}
+.ip-modal .mbtns [data-t=modal-cancel]{min-height:56px}
+.ip-l{font-size:var(--fs-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text-2);margin:var(--s2) 0 4px}
+.ip-heats{display:grid;grid-template-columns:repeat(5,1fr);gap:var(--s2)}
+.ip-heats.n4{grid-template-columns:repeat(4,1fr)}
+.ip-ht{position:relative;display:block;margin:0;cursor:pointer}
+.ip-ht input{position:absolute;opacity:0;inset:0;margin:0;width:100%;height:100%}
+.ip-ht span{display:flex;align-items:center;justify-content:center;height:48px;border:1px solid var(--line-strong);border-radius:var(--r-md);font-weight:700;font-size:var(--fs-md);white-space:nowrap;background:var(--surface-2);color:var(--text)}
+.ip-ht input:checked+span{background:var(--brand);border-color:var(--brand);color:#111}
+.ip-ht input:focus-visible+span{outline:2px solid var(--brand-400);outline-offset:2px}
+.ip-ex{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2)}
+.ip-e{display:flex;justify-content:space-between;align-items:center;gap:var(--s2);border:1px solid var(--line-strong);background:var(--surface-2);border-radius:var(--r-md);padding:4px var(--s3);font-size:var(--fs-sm)}
+.ip-e b{color:var(--text-2);font-weight:600}
+.ip-q{display:inline-flex;align-items:center;gap:6px;flex:none}
+.ip-q button{width:36px;height:36px;border:0;border-radius:var(--r-sm);background:var(--surface-3);color:var(--text);font-size:20px;font-weight:700;cursor:pointer}
+.ip-q input{width:36px;min-height:0;text-align:center;background:transparent;border:0;color:var(--text);font-weight:700;font-size:var(--fs-md);padding:0}
+.ipop textarea{width:100%;min-height:44px;height:44px;resize:vertical;box-sizing:border-box;background:var(--surface-2);border:1px solid var(--line-strong);color:var(--text);border-radius:var(--r-md)}
+@media (max-width:760px){.modal-bg.ip-bg{padding:0;align-items:flex-end}.modal.ip-modal{max-height:100vh;border-radius:14px 14px 0 0}
+ .ip-heats{gap:4px}.ip-ht span{height:48px;font-size:var(--fs-sm);white-space:normal;text-align:center;line-height:1.1}.ip-ex{grid-template-columns:1fr}.ip-modal h2,.ip-modal .mbody,.ip-modal .mbtns{padding-left:var(--s3);padding-right:var(--s3)}.ip-modal h2{padding-right:48px}.ip-modal .mbtns{gap:var(--s2)}.ip-modal .mbtns [data-t=modal-ok]{font-size:var(--fs-md)}}
+.ip-modal .ip-price{white-space:nowrap}

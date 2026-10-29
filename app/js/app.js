@@ -209,27 +209,47 @@ const heatTag=l=>l.heat2?` <span class="heat h-${l.heat.replace(/ /g,'')}">Tende
 const PHOTOS={combo1:'img/combo1.webp',combo2:'img/combo2.webp',combo3:'img/combo3.webp',mac:'img/mac.webp',mozz:'img/mozz.webp'};
 const phIcon=i=>/drink|bever/i.test(i.cat)?'🥤':/dessert/i.test(i.cat)?'🍩':/fries/i.test(i.id+i.name)?'🍟':/sauce|honey/i.test(i.id)?'🥣':/roll/i.test(i.id)?'🥖':'🍗';
 const shortName=n=>n.replace(/\s*\(.*\)\s*/,'').replace("Moe's ",'');
-const FAV_DEFAULT=[['combo1','Hot'],['combo2','Medium'],['combo3',null],['mac','Medium'],['mozz','Medium'],['baja',null]];
+const FAV_DEFAULT=[['combo1','Hot'],['combo2','Medium'],['combo3','Medium'],['mac','Medium'],['mozz','Medium'],['baja',null]];
 // Favourites: 6 best sellers from order history (last 500 orders), padded with defaults; heat = most common for that item.
 async function favourites(menu){ const key=menuKey(App.draft); const os=(await db.all('orders')).filter(o=>!['void','cancelled'].includes(o.status)).sort((a,b)=>b.createdAt-a.createdAt).slice(0,500);
   const cnt={}, hc={}; for(const o of os) for(const l of o.lines||[]){ cnt[l.itemId]=(cnt[l.itemId]||0)+(l.qty||1); if(l.heat){ const h=(hc[l.itemId]??={}); h[l.heat]=(h[l.heat]||0)+(l.qty||1); } }
   const ok=id=>{ const i=menu.items.find(x=>x.id===id); return i&&i.on&&!i.sample?i:null; };
   const ids=Object.keys(cnt).filter(ok).sort((a,b)=>cnt[b]-cnt[a]); for(const [id] of FAV_DEFAULT) if(!ids.includes(id)&&ok(id)) ids.push(id);
-  return ids.slice(0,6).map(id=>{ const i=ok(id); const h=hc[id]?Object.entries(hc[id]).sort((a,b)=>b[1]-a[1])[0][0]:(FAV_DEFAULT.find(f=>f[0]===id)||[])[1]; return {id,short:shortName(i.name),price:i.price,heat:i.heat&&id!=='combo3'?(h||'Medium'):null}; }); }
+  return ids.slice(0,6).map(id=>{ const i=ok(id); const h=hc[id]?Object.entries(hc[id]).sort((a,b)=>b[1]-a[1])[0][0]:(FAV_DEFAULT.find(f=>f[0]===id)||[])[1]; return {id,short:shortName(i.name),price:i.price,heat:i.heat?(h||'Medium'):null}; }); }
 function jumpCat(i){ const h=$(`[data-catsec="${i}"]`); if(h) h.scrollIntoView({block:'start',behavior:'smooth'}); $$('[data-cat]').forEach(b=>b.classList.toggle('on',+b.dataset.cat===i)); }
 async function clearCart(){ const d=App.draft; App.done=null; App.strip=null; App.draft=newDraft(kindOf(d)); await saveDraft(); renderPOS(); }
-// Tap a tile: heat items open the inline heat strip (one tap = add); Combo 3 opens its two-heat builder; Rush mode adds instantly with the usual heat.
+// Tap a tile: main (heat) items open the centred item popup (edits the existing cart line if the item is already in the cart); Rush mode adds instantly with the usual heat.
 function tapItem(id,heats){ App.done=null; const d=App.draft; const it=App.menus[menuKey(d)].items.find(i=>i.id===id); if(!it) return;
-  if(!it.on) return addItem(id,heats); if(!it.heat||id==='combo3') return addItem(id,heats);
+  if(!it.on||!it.heat) return addItem(id,heats);
   const def=d.prefHeat&&heats.includes(d.prefHeat)?d.prefHeat:'Medium';
   if(App.rush) return addItem(id,heats,{heat:def});
-  closeStrip(); const tileEl=$(`[data-item="${id}"]`), grid=tileEl?.closest('.grid'); if(!grid) return addItem(id,heats);
-  tileEl.classList.add('sel'); const w=document.createElement('div'); w.className='hstrip'; w.dataset.t='heatstrip'; w.dataset.default=def; w.dataset.item=id;
-  w.innerHTML=`<div class="hs-h"><b>${esc(it.name)}</b> <span class="muted">tap a level to add · Esc cancel</span></div><div class="hs-b">${heats.map(h=>`<button type="button" class="hbtn h-${h.replace(/ /g,'')} ${h===def?'def':''}" data-sheat="${h}" data-t="sheat-${h.replace(/ /g,'')}">${h}</button>`).join('')}<button type="button" class="btn small ghost" data-t="strip-more">Add-ons / qty / note…</button><button type="button" class="btn small ghost" data-t="strip-cancel">Cancel</button></div>`;
-  grid.after(w); App.strip=w;
-  $$('[data-sheat]',w).forEach(b=>b.onclick=()=>{ closeStrip(); safe(()=>addItem(id,heats,{heat:b.dataset.sheat})); });
-  $('[data-t=strip-more]',w).onclick=()=>{ closeStrip(); safe(()=>addItem(id,heats,{full:true})); };
-  $('[data-t=strip-cancel]',w).onclick=closeStrip; }
+  let li=-1; d.lines.forEach((l,i)=>{ if(l.itemId===id&&!l.foc) li=i; });
+  return itemPopup(it,heats,li>=0?li:null); }
+// Centred item popup: heat row(s), extras +/- tiles, comments, qty stepper and "Add to order · Rs total".
+async function itemPopup(it,heats,editIdx=null){ const d=App.draft, mk=menuKey(d), addons=App.menus[mk].addons||[];
+  const ed=editIdx!=null?d.lines[editIdx]:null, two=it.id==='combo3';
+  const def=d.prefHeat&&heats.includes(d.prefHeat)?d.prefHeat:(heats.includes('Medium')?'Medium':heats[0]);
+  const cnt={}; (ed?.addons||[]).forEach(a=>cnt[a.id]=(cnt[a.id]||0)+1);
+  const hrow=(nm,lg,pre)=>`<div class="ip-l">${lg}</div><div role="radiogroup" data-t="${nm}-set" class="ip-heats${heats.length===4?' n4':''}">${heats.map(h=>`<label class="ip-ht"><input type="radio" name="${nm}" value="${h}" ${h===pre?'checked':''} data-t="${nm}-${h.replace(/ /g,'')}"><span>${h}</span></label>`).join('')}</div>`;
+  const step=(nm,v,t,min)=>`<span class="ip-q"><button type="button" data-step="${nm}" data-d="-1" data-min="${min}" data-t="${t}-minus" aria-label="Less">−</button><input name="${nm}" value="${v}" inputmode="numeric" data-t="${t}"><button type="button" data-step="${nm}" data-d="1" data-min="${min}" data-t="${t}-plus" aria-label="More">+</button></span>`;
+  const body=`<div class="ipop" data-t="item-popup" data-item="${it.id}">
+   ${two?hrow('heat','Tender heat',ed?.heat||def)+hrow('heat2','Slider heat',ed?.heat2||def):hrow('heat','Heat',ed?.heat||def)}
+   ${addons.length?`<div class="ip-l">Extras</div><div class="ip-ex">${addons.map(a=>`<div class="ip-e" data-t="extra-${a.id}"><span>${esc(a.name.replace(/^\+\s*/,''))} <b class="num">+${a.price}</b></span>${step('ad_'+a.id,cnt[a.id]||0,'addon-'+a.id,0)}</div>`).join('')}</div>`:''}
+   <div class="ip-l">Comments</div><textarea name="note" maxlength="200" rows="2" data-t="lnote" placeholder="e.g. no pickles">${esc(ed?.note||'')}</textarea>
+   <div class="ip-foot">${step('qty',ed?.qty||1,'qty',1)}</div></div>`;
+  const okLbl=()=>{ const f=$('.ip-modal'); if(!f) return ''; const q=parseInt($('[name=qty]',f).value)||0; const ex=addons.reduce((s,a)=>s+(parseInt($(`[name="ad_${a.id}"]`,f).value)||0)*a.price,0); return `${ed?'Save changes':'Add to order'} · ${L.rs((it.price+ex)*q)}`; };
+  const p=form(it.name,body,r=>{ const q=toInt(r.qty,{min:1,max:99}); for(const a of addons) toInt(r['ad_'+a.id]||0,{min:0,max:20});
+      if(!heats.includes(r.heat)) throw new Error('Pick a heat level'); if(two&&!heats.includes(r.heat2)) throw new Error('Pick the slider heat'); return {...r,q}; },{ok:'Add to order',wide:true});
+  const w=$('.modal-bg'); w.classList.add('ip-bg'); $('.modal',w).classList.add('ip-modal');
+  $('h2',w).insertAdjacentHTML('beforeend',` <span class="ip-price num" data-t="ip-price">${L.rs(it.price)}</span>`);
+  const okb=$('[data-t=modal-ok]',w); document.activeElement?.blur?.(); $(`[name=heat]:checked`,w)?.focus({preventScroll:true}); okb.before($('.ip-foot .ip-q',w)); $('.ip-foot',w)?.remove(); const upd=()=>{ okb.textContent=okLbl(); }; upd();
+  w.addEventListener('input',upd);
+  $$('[data-step]',w).forEach(b=>b.onclick=()=>{ const i=$(`[name="${b.dataset.step}"]`,w); const mx=b.dataset.step==='qty'?99:20; i.value=Math.max(+b.dataset.min,Math.min(mx,(parseInt(i.value)||0)+(+b.dataset.d))); upd(); });
+  const r=await p; if(!r) return;
+  const line={itemId:it.id,name:it.name,qty:r.q,unitPrice:it.price,heat:r.heat,...(two?{heat2:r.heat2}:{}),note:(r.note||'').trim(),sample:!!it.sample,
+    addons:addons.flatMap(a=>Array(Math.max(0,Math.min(20,parseInt(r['ad_'+a.id])||0))).fill(0).map(()=>({id:a.id,name:a.name,price:a.price})))};
+  if(ed) d.lines[editIdx]={...ed,...line}; else d.lines.push(line);
+  await saveDraft(); renderPOS(); }
 function closeStrip(){ App.strip?.remove(); App.strip=null; $$('.item.sel').forEach(x=>x.classList.remove('sel')); }
 const PAYNAME={cash:'Cash',hbl:'HBL',bah:'BAH',card:'Card',fp_online:'Foodpanda online'};
 function doneCard(x){ const o=x.order, t=o.totals||L.computeTotals(o,App.policy); const paid=(o.payments||[]); const fp=o.channel==='foodpanda';
@@ -244,7 +264,7 @@ function bindDone(){ const c=$('[data-t=done-card]'); if(!c) return; const o=App
 // Laptop shortcuts (POS only): 1-9 category, Enter charge / new order, Esc clear. Never while typing or with a dialog open.
 document.addEventListener('keydown',e=>{ if(!App.user||App.view!=='pos'||e.ctrlKey||e.metaKey||e.altKey) return; const tg=e.target;
   if(tg&&(tg.closest?.('input,textarea,select,[contenteditable],button.qt')||tg.isContentEditable)) return; if($('.modal-bg')||$('#nalert')) return;
-  if(e.key==='Escape'){ e.preventDefault(); if(App.strip) return closeStrip(); if(App.done){ App.done=null; return renderPOS(); } return safe(clearCart); }
+  if(e.key==='Escape'){ e.preventDefault(); if(App.done){ App.done=null; return renderPOS(); } return safe(clearCart); }
   if(e.key==='Enter'){ if(tg&&tg.tagName==='BUTTON'&&tg!==document.body) return; e.preventDefault(); if(App.done){ App.done=null; return renderPOS(); } if(App.draft?.lines.length) return safe(checkout); return; }
   if(/^[1-9]$/.test(e.key)&&$(`[data-cat="${+e.key-1}"]`)){ e.preventDefault(); jumpCat(+e.key-1); } });
 function setZone(id){ const z=App.zones.find(z=>z.id===id); App.draft.delivery=z?{zone:z.id,charge:z.customerCharge,riderFare:z.riderFare}:null; }
@@ -287,18 +307,16 @@ async function addItem(id,heats,opt={}){ const d=App.draft; const mk=menuKey(d);
   if(!it) return; if(!it.on){ toast(it.name+' is SOLD OUT','err'); return; }
   const addons=App.menus[mk].addons||[];
   const wantsMods=it.heat || (addons.length && !['Extras','Drinks','Beverages','Dessert'].includes(it.cat) && !it.sample);
-  if(it.heat&&id!=='combo3'&&opt.heat&&heats.includes(opt.heat)&&!opt.full){
-    const ex=d.lines.find(l=>l.itemId===it.id&&l.heat===opt.heat&&!l.heat2&&!(l.addons||[]).length&&!l.note&&!l.foc);
-    if(ex) ex.qty++; else d.lines.push({itemId:it.id,name:it.name,qty:1,unitPrice:it.price,heat:opt.heat,note:'',sample:!!it.sample,addons:[]});
+  if(it.heat&&opt.heat&&heats.includes(opt.heat)&&!opt.full){ const two=it.id==='combo3';
+    const ex=d.lines.find(l=>l.itemId===it.id&&l.heat===opt.heat&&(two?l.heat2===opt.heat:!l.heat2)&&!(l.addons||[]).length&&!l.note&&!l.foc);
+    if(ex) ex.qty++; else d.lines.push({itemId:it.id,name:it.name,qty:1,unitPrice:it.price,heat:opt.heat,...(two?{heat2:opt.heat}:{}),note:'',sample:!!it.sample,addons:[]});
+  } else if(it.heat){ return itemPopup(it,heats);
   } else if(wantsMods){
-    const two=id==='combo3'&&it.heat, ph=App.draft.prefHeat&&heats.includes(App.draft.prefHeat)?App.draft.prefHeat:heats[1];
-    const hset=(nm,lg,pre)=>`<fieldset class="heats" data-t="${nm}-set"><legend>${lg}</legend>${heats.map(h=>`<label class="radio hpick h-${h.replace(/ /g,'')}"><input type="radio" name="${nm}" value="${h}" ${h===pre?'checked':''} data-t="${nm}-${h.replace(/ /g,'')}"> ${h}</label>`).join('')}</fieldset>`;
-    const r=await form(two?'Combo 3 – one tender + one slider':it.name,`${two?hset('heat','Tender heat',opt.heat||ph)+hset('heat2','Slider heat',ph):it.heat?hset('heat','Heat level',opt.heat&&heats.includes(opt.heat)?opt.heat:ph):''}
-      ${addons.length?`<fieldset><legend>Add-ons</legend>${addons.map(a=>`<label class="radio adchip"><input type="checkbox" name="ad_${a.id}" data-t="addon-${a.id}"> ${esc(a.name)} ${L.rs(a.price)}</label>`).join('')}</fieldset>`:''}
+    const r=await form(it.name,`${addons.length?`<fieldset><legend>Add-ons</legend>${addons.map(a=>`<label class="radio adchip"><input type="checkbox" name="ad_${a.id}" data-t="addon-${a.id}"> ${esc(a.name)} ${L.rs(a.price)}</label>`).join('')}</fieldset>`:''}
       <label>Qty<input name="qty" value="1" inputmode="numeric" data-t="qty"></label><label>Note for kitchen<input name="note" maxlength="200" data-t="lnote"></label>`,
-      r=>{ toInt(r.qty,{min:1,max:99}); if(it.heat && !heats.includes(r.heat)) throw new Error('Pick a heat level'); if(two&&!heats.includes(r.heat2)) throw new Error('Pick the slider heat'); return true; },{ok:'Add'});
+      r=>{ toInt(r.qty,{min:1,max:99}); return true; },{ok:'Add'});
     if(!r) return;
-    d.lines.push({itemId:it.id,name:it.name,qty:toInt(r.qty,{min:1,max:99}),unitPrice:it.price,heat:it.heat?r.heat:null,...(two?{heat2:r.heat2}:{}),note:(r.note||'').trim(),sample:!!it.sample,
+    d.lines.push({itemId:it.id,name:it.name,qty:toInt(r.qty,{min:1,max:99}),unitPrice:it.price,heat:null,note:(r.note||'').trim(),sample:!!it.sample,
       addons:addons.filter(a=>r['ad_'+a.id]).map(a=>({id:a.id,name:a.name,price:a.price}))});
   } else {
     const ex=d.lines.find(l=>l.itemId===it.id&&!l.heat&&!(l.addons||[]).length&&!l.note); if(ex) ex.qty++; else d.lines.push({itemId:it.id,name:it.name,qty:1,unitPrice:it.price,heat:null,note:'',addons:[],sample:!!it.sample});
