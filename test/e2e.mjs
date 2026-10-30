@@ -150,6 +150,13 @@ test('EllesRole',"Elle's login: bazaar only, Elle's items only, no reports/setti
   const o=await H.lastOrder(p); eq([o.location,o.lines.map(l=>l.itemId)],['mashion',['elles_takis']]);
   const stk=await p.evaluate(async()=>(await window.__pos.onHand())['elles_stk_takis|mashion']); eq(stk,-1); 
   await p.ctx.close(); });
+test('EllesRole',"Elle's charge screen hides Pay Later / More options; discount button is whole-order FOC only", async()=>{ const p=await ellesUser(); await H.login(p,'momin','8888');
+  await H.add(p,'elles_takis'); await H.add(p,'elles_plain'); eq((await p.textContent('[data-t=discount]')).trim(),'FOC whole order'); await H.openCheckout(p);
+  eq(await p.$('[data-t=q-later]'),null); eq(await p.$('[data-t=pay-split]'),null); ok(await p.$('[data-t=q-cashrow]'),'cash'); await p.click('[data-t=modal-cancel]'); await H.sleep(p);
+  await p.click('[data-t=discount]'); await H.sleep(p); const kinds=await p.$$eval('[data-t=dkind] option',os=>os.map(o=>o.value)); eq(kinds,['foc','none']);
+  await p.fill('[data-t=dreason]','launch freebie'); await p.click('[data-t=modal-ok]'); await H.sleep(p,300); eq(await p.$('[data-t=foc-pin]'),null);
+  await H.openCheckout(p); await p.click('[data-t=q-zero]'); await H.sleep(p,300); const o=await H.lastOrder(p); eq(o.discount?.kind,'foc');
+  await p.ctx.close(); });
 test('EllesRole',"Elle's can self-approve FOC on Elle's items (reason, approvedBy Elle's, stock deducted, FOC report) but never on Moe's items", async()=>{ const p=await ellesUser(); await H.login(p,'momin','8888');
   await H.add(p,'elles_plain'); await p.click('[data-t=foc-line-0]'); await H.sleep(p); await p.click('[data-t=modal-ok]'); await H.sleep(p); ok(await p.$('[data-t=foc-reason]'),'reason required');
   await p.fill('[data-t=foc-reason]','tasting sample'); await p.click('[data-t=modal-ok]'); await H.sleep(p,300); eq(await p.$('[data-t=foc-pin]'),null);

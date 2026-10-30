@@ -21,6 +21,7 @@ export async function fp(p,id,total){ await channel(p,'foodpanda'); await p.fill
 export async function fpTotal(p,total){ await p.evaluate(()=>{ const d=document.querySelector('details.fpt'); if(d) d.open=true; }); await p.fill('[data-t=fptotal]',String(total)); await p.press('[data-t=fptotal]','Tab'); await sleep(p); }
 export async function openCheckout(p){ await p.click('[data-t=checkout]'); await sleep(p); }
 export async function pay(p,pays,{unpaid=false,tendered}={}){ await openCheckout(p); const err=await p.$('[data-t=modal]'); if(!err){ const tt=await toastText(p); return / saved/.test(tt)&&await p.$('[data-t=done-card]')?{ok:true}:{error:tt}; }
+  if(!(await p.$('[data-t=pay-split]'))&&await p.$('[data-t=qpay]')){ const ks=Object.keys(pays); if(!ks.length&&await p.$('[data-t=q-zero]')) await p.click('[data-t=q-zero]'); else if(ks.length===1&&ks[0]==='cash'){ await p.fill('[data-t=q-custom]',String(tendered||pays.cash)); await p.click('[data-t=q-custom-go]'); } else if(ks.length===1) await p.click(`[data-t=q-${ks[0]}]`); else throw new Error('quick-pay only'); await sleep(p,300); if(await p.$('[data-t=modal]')) return {error:await p.textContent('[data-t=modal-err]')}; return {ok:true}; }
   if(await p.$('[data-t=pay-split]')){ await p.click('[data-t=pay-split]'); await sleep(p); }
   for(const i of await p.$$('[data-t^="pay-"]')) await i.fill('');
   for(const [m,a] of Object.entries(pays)) await p.fill(`[data-t="pay-${m}"]`,String(a)); if(unpaid) await p.check('[data-t=unpaid]'); if(tendered) await p.fill('[data-t=tendered]',String(tendered));

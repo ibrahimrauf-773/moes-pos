@@ -210,7 +210,7 @@ async function renderPOS(){
     <div class="tot"><div><span>Subtotal</span><span class="num" data-t="subtotal">${L.rs(t.subtotal)}</span></div>${t.discount?`<div><span>Discount (${d.discount.kind}${d.discount.type==='pct'?' '+d.discount.value+'%':''})</span><span class="num" data-t="disc-amt">−${L.rs(t.discount)}</span></div>`:''}
     ${t.delivery?`<div><span>Delivery ${d.delivery.zone}</span><span class="num" data-t="deliv">${L.rs(t.delivery)}</span></div>`:''}${t.gst?`<div><span>GST</span><span class="num">${L.rs(t.gst)}</span></div>`:''}
     <div class="grand"><span>${fpMode?'Foodpanda total':'Total'}</span><span class="num" data-t="total">${L.rs(t.total)}</span></div></div>
-   <div class="cbtns"><button class="btn ghost" id="disc" data-t="discount">Discount / staff / comp</button><button class="btn primary big" id="checkout" data-t="checkout" ${d.lines.length?'':'disabled'}>${fpMode?'Send to kitchen & print':`Charge ${L.rs(t.total)}`} <kbd>↵</kbd></button></div></div>
+   <div class="cbtns"><button class="btn ghost" id="disc" data-t="discount">${isElles()?'FOC whole order':'Discount / staff / comp'}</button><button class="btn primary big" id="checkout" data-t="checkout" ${d.lines.length?'':'disabled'}>${fpMode?'Send to kitchen & print':`Charge ${L.rs(t.total)}`} <kbd>↵</kbd></button></div></div>
    ${App.done?doneCard(App.done):''}</aside></div>`;
   $$('[data-cat]').forEach(b=>b.onclick=()=>jumpCat(+b.dataset.cat));
   $$('[data-fav]').forEach(b=>b.onclick=()=>safe(()=>addItem(b.dataset.fav,heats,{heat:b.dataset.heat||null})));
@@ -362,9 +362,9 @@ async function addItem(id,heats,opt={}){ const d=App.draft; const mk=menuKey(d);
   await saveDraft(); renderPOS();
 }
 async function discountFlow(){ const d=App.draft;
-  const r=await form('Discount',`<label>Kind<select name="kind" data-t="dkind"><option value="customer">Customer discount</option><option value="staff">Staff meal (${App.policy.staffMealPct}%)</option><option value="foc">FOC – whole order free (owner/Waqar)</option><option value="comp">Comp (free, owner)</option><option value="none">Remove discount</option></select></label>
+  const el=isElles(); const r=await form(el?'FOC whole order':'Discount',el?`<label>Kind<select name="kind" data-t="dkind"><option value="foc">FOC – whole order free (Elle's items)</option><option value="none">Remove FOC</option></select></label><label>Reason (required)<input name="reason" data-t="dreason" maxlength="200"></label><input type="hidden" name="type" value="pct"><input type="hidden" name="value" value="">`:`<label>Kind<select name="kind" data-t="dkind"><option value="customer">Customer discount</option><option value="staff">Staff meal (${App.policy.staffMealPct}%)</option><option value="foc">FOC – whole order free (owner/Waqar)</option><option value="comp">Comp (free, owner)</option><option value="none">Remove discount</option></select></label>
    <label>Type<select name="type" data-t="dtype"><option value="pct">%</option><option value="amt">Rs amount</option></select></label><label>Value (blank = default)<input name="value" inputmode="numeric" data-t="dvalue"></label><label>Reason (required)<input name="reason" data-t="dreason" maxlength="200"></label>`,
-   r=>{ if(r.kind==='none') return true; if(r.kind==='customer') toInt(r.value,{min:1,max:r.type==='pct'?100:1e7}); else if(r.value!=='') toInt(r.value,{min:1,max:r.type==='pct'?100:1e7}); if(!r.reason.trim()) throw new Error('Reason is required'); return true; });
+   r=>{ if(el&&!['foc','none'].includes(r.kind)) throw new Error("Elle's login: FOC only"); if(r.kind==='none') return true; if(r.kind==='customer') toInt(r.value,{min:1,max:r.type==='pct'?100:1e7}); else if(r.value!=='') toInt(r.value,{min:1,max:r.type==='pct'?100:1e7}); if(!r.reason.trim()) throw new Error('Reason is required'); return true; });
   if(!r) return; if(r.kind==='none'){ d.discount=null; await saveDraft(); return renderPOS(); }
   const disc={kind:r.kind,type:r.type,value:r.value===''?0:toInt(r.value),reason:r.reason.trim()};
   if(r.kind==='staff' && r.value===''){ disc.type='pct'; disc.value=App.policy.staffMealPct; }
@@ -388,12 +388,12 @@ async function quickPay(d,t,methods){ const T=t.total, has=id=>methods.some(m=>m
     ${T>0?`<details class="qsplit" data-t="q-splitrow"><summary class="ql" data-t="q-split-toggle"><b>Split payment ›</b><small>e.g. part cash + rest by HBL transfer – remaining fills in automatically</small></summary>
       <div class="sparts" data-t="sparts"></div><div class="srow"><button type="button" class="btn small" data-t="q-split-add">+ Add part</button><span data-t="q-split-rem" class="srem"></span>
       <label class="scash">Cash given <input inputmode="numeric" data-t="q-split-tendered" placeholder="optional"></label><span data-t="q-split-change" class="srem"></span><button type="button" class="btn primary" data-t="q-split-go">Place split order</button></div></details>`:''}
-    ${T>0&&d.channel!=='foodpanda'?row('later','Pay Later / Tab',d.customer?.name?esc(d.customer.name)+"'s tab – not drawer cash":'needs customer phone + name',L.rs(T)):''}
+    ${T>0&&d.channel!=='foodpanda'&&!isElles()?row('later','Pay Later / Tab',d.customer?.name?esc(d.customer.name)+"'s tab – not drawer cash":'needs customer phone + name',L.rs(T)):''}
   </div>`;
   const blank=Object.fromEntries(methods.map(m=>['p_'+m.id,''])); const mk=o=>({...blank,tendered:'',pref:'',...o});
   return await new Promise(res=>{ const p=modal('Charge '+L.rs(T),body,{ok:'More options…',cancel:'Back to cart',wide:true,inline:true});
     if(d.prefPay){ const u=$(`[data-t=q-${d.prefPay}]`)||(d.prefPay==='cash'?$('[data-t=q-cashrow]'):null); if(u){ u.classList.add('usual'); u.insertAdjacentHTML('afterbegin','<span class="ubadge" data-t="q-usual">Usual</span>'); } } p.then(v=>res(v?'split':null));
-    const ok=$('[data-t=modal-ok]'); if(ok){ ok.classList.remove('primary'); ok.dataset.t='pay-split'; ok.classList.add('ghost'); }
+    const ok=$('[data-t=modal-ok]'); if(ok&&isElles()) ok.remove(); else if(ok){ ok.classList.remove('primary'); ok.dataset.t='pay-split'; ok.classList.add('ghost'); }
     const done=v=>{ closeModal(); res(v); };
     if($('.modal-bg.inline')){ const ql=$('[data-t=q-splitrow] .ql'); if(ql) ['q-split-rem','q-split-change'].forEach(k=>{ const e=$(`[data-t=${k}]`); if(e) ql.append(e); }); const ad=$('[data-t=q-split-add]'); if(ad){ ad.textContent='+'; ad.title='Add part'; ad.setAttribute('aria-label','Add part'); } const g=$('[data-t=q-split-go]'); if(g) g.textContent='Place split'; }
     $$('[data-tender]').forEach(b=>b.onclick=()=>done(mk({p_cash:String(T),tendered:b.dataset.tender})));
