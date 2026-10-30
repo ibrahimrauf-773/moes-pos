@@ -11,6 +11,7 @@ assert.equal(L.discountNeedsOwner('cashier',{type:'pct',value:10,kind:'customer'
 assert.equal(L.discountNeedsOwner('cashier',{type:'pct',value:15,kind:'customer'},S.POLICY),true);
 assert.equal(L.discountNeedsOwner('cashier',{type:'pct',value:30,kind:'staff'},S.POLICY),false);
 assert.equal(L.discountNeedsOwner('cashier',{type:'pct',value:100,kind:'comp'},S.POLICY),true);
+assert.equal(L.discountNeedsOwner('elles',{type:'pct',value:100,kind:'customer'},S.POLICY),false); assert.equal(L.discountNeedsOwner('elles',{type:'pct',value:30,kind:'staff'},S.POLICY),true); assert.equal(L.discountNeedsOwner('elles',{type:'pct',value:100,kind:'comp'},S.POLICY),true);
 // deductions
 const d=L.deductionsFor({type:'takeaway',lines:[{itemId:'baja',qty:2,addons:[]},{itemId:'combo1',qty:1,addons:[{id:'hot_honey'}]}]},S.USAGE,[{menuItemId:'combo1',lines:[{stockId:'ready_tenders',qty:2}]}]);
 assert.equal(d.cup12,2); assert.equal(d.baja_mix,460); assert.equal(d.ready_tenders,2); assert.equal(d.dip2oz,1); assert.equal(d.takeaway_bags,1);

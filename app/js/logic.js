@@ -77,7 +77,7 @@ export function customerPrefs(orders,drinkIds=new Set(),policy={}){ const os=ord
 
 // Permission rules (policy from owner, Oct 28)
 export function discountNeedsOwner(role, d, policy){
-  if(!d) return false; if(role==='owner') return false; if(role==='elles') return true; // Elle's login: any discount needs an owner
+  if(!d) return false; if(role==='owner') return false; if(role==='elles') return !(d.kind==='customer'||d.kind==='foc'); // Elle's login: self-approves customer discounts/FOC (Elle's-only orders enforced in app); staff/comp never
   if(d.kind==='staff') return d.type!=='pct' || d.value>policy.staffMealPct;
   if(d.kind==='comp') return true;
   return d.type!=='pct' || d.value>policy.cashierMaxDiscountPct;
@@ -106,7 +106,7 @@ export function recipeCost(recipe, costByName){ let c=0, missing=[];
 // ---------- Nightly report (Accountant spec) ----------
 export function shiftReport({orders, expenses=[], shift=null, zones=[], payMethods=[], policy={}, settlements=[], outstanding=null}){
   const counted=orders.filter(isCounted);
-  const r={byChannel:{},byPay:{},items:{},adjustments:[],deliveryByZone:{},expenses:[],foc:[],fp:{orders:0,gross:0,commissionPct:policy.fpCommissionPct??23,commissionEst:0,payoutEst:0},samples:{},collab:{elles:{name:"Elle's x Moe's",units:0,amount:0,items:{}}}};
+  const r={byChannel:{},byPay:{},items:{},adjustments:[],deliveryByZone:{},expenses:[],foc:[],fp:{orders:0,gross:0,commissionPct:policy.fpCommissionPct??23,commissionEst:0,payoutEst:0},samples:{},collab:{elles:{name:"Elle's x Moe's",units:0,amount:0,discount:0,net:0,discounts:[],items:{}}}};
   const ch=k=>r.byChannel[k]??={orders:0,gross:0};
   for(const o of counted){
     const t=computeTotals(o,policy); const c=ch(o.channel); c.orders++; c.gross+=t.total-(t.delivery||0); r.deliveryToSpeedway=(r.deliveryToSpeedway||0)+(t.delivery||0);
@@ -114,7 +114,8 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
     if(o.channel==='foodpanda'){ r.fp.orders++; r.fp.gross+=t.total; }
     for(const p of [...custPayments(o),...riderEntries(o)]){ if((p.settle||p.bd)&&p.bd&&p.bd!==o.businessDate) continue; (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; }
     if(!custPayments(o).length && o.channel==='foodpanda'){ (r.byPay.fp_online??={count:0,amount:0}); r.byPay.fp_online.count++; r.byPay.fp_online.amount+=t.total; }
-    for(const l of o.lines||[]){
+    let cbo=0, ogross=0;
+    for(const l of o.lines||[]){ ogross+=l.foc?0:lineTotal(l); if(isCollabId(l.itemId)&&!l.foc) cbo+=lineTotal(l);
       const key=l.itemId+'|'+l.name; const it=r.items[key]??={itemId:l.itemId,name:l.name,units:0,amount:0,sample:!!l.sample};
       it.units+=l.qty||1; it.amount+=l.foc?0:(l.unitPrice||0)*(l.qty||1)+(l.lineTotalOverride!=null?l.lineTotalOverride-lineUnit(l)*(l.qty||1):0);
       if(l.foc) r.foc.push({orderNo:o.orderNo,scope:'item',item:`${l.qty}x ${l.name}`,value:lineList(l),reason:l.foc.reason,by:l.foc.by});
@@ -124,6 +125,7 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
       for(const a of l.addons||[]){ const ak='addon:'+a.id+'|'+a.name; const ai=r.items[ak]??={itemId:a.id,name:'Add-on: '+a.name,units:0,amount:0};
         ai.units+=l.qty||1; ai.amount+=l.foc?0:(a.price||0)*(l.qty||1); }
     }
+    if(cbo&&t.discount){ const share=Math.min(cbo,Math.round(t.discount*cbo/Math.max(ogross,1))); const cb=r.collab.elles; cb.discount+=share; cb.discounts.push({orderNo:o.orderNo,type:o.discount?.kind==='foc'?'FOC':o.discount?.kind||'discount',amount:share,reason:o.discount?.reason||'',by:o.discount?.approvedBy||''}); }
     if(o.discount?.kind==='foc') r.foc.push({orderNo:o.orderNo,scope:'order',item:(o.lines||[]).map(l=>`${l.qty}x ${l.name}`).join(', '),value:t.discount,reason:o.discount.reason||'',by:o.discount.approvedBy||''});
     else if(o.discount && t.discount) r.adjustments.push({orderNo:o.orderNo,type:o.discount.kind==='comp'?'comp':(o.discount.kind==='staff'?'staff meal':'discount'),amount:t.discount,reason:o.discount.reason||'',by:o.discount.approvedBy||o.staffId||''});
     for(const f of o.refunds||[]) r.adjustments.push({orderNo:o.orderNo,type:'refund',amount:f.amount,reason:f.reason,by:f.by,method:f.method});
@@ -153,8 +155,8 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
             refunds:counted.reduce((a,o)=>a+refunded(o),0)};
   r.totals.net=r.totals.gross-r.totals.refunds;
   r.itemList=Object.values(r.items).sort((a,b)=>b.amount-a.amount||b.units-a.units);
-  // Elle's collab split: line amounts before any order-level discount; Moe's = item sales minus Elle's.
-  const cb=r.collab.elles; cb.itemList=Object.values(cb.items).sort((a,b)=>b.amount-a.amount||b.units-a.units); r.moesItems=r.salesItems-cb.amount;
+  // Elle's collab split: line amounts, then order-level discounts allocated pro-rata to Elle's lines (net); Moe's = item sales minus Elle's.
+  const cb=r.collab.elles; cb.itemList=Object.values(cb.items).sort((a,b)=>b.amount-a.amount||b.units-a.units); r.moesItems=r.salesItems-cb.amount; cb.net=cb.amount-cb.discount;
   return r;
 }
 export const isCollabId=id=>/^elles_/.test(String(id||''));
@@ -168,7 +170,7 @@ export function reportCSV(r, meta={}){
   for(const [k,v] of Object.entries(r.byPay)) rows.push(['Payment',k,v.count,v.amount]);
   for(const i of r.itemList) rows.push(['Item',i.name,i.units,i.amount]);
   const cb=r.collab?.elles; if(cb&&cb.units){ for(const i of cb.itemList) rows.push(["Elle's x Moe's (collab)",i.name,i.units,i.amount]);
-    rows.push(["Elle's x Moe's (collab)","Elle's subtotal (split with Elle's)",cb.units,cb.amount],["Moe's","Moe's items subtotal (excl. Elle's)",'',r.moesItems]); }
+    rows.push(["Elle's x Moe's (collab)","Elle's subtotal before discounts",cb.units,cb.amount],["Elle's x Moe's (collab)","Discounts/FOC on Elle's items",'',-cb.discount],["Elle's x Moe's (collab)","Elle's net (split with Elle's)",cb.units,cb.net],["Moe's","Moe's items subtotal (excl. Elle's)",'',r.moesItems]); }
   for(const [k,v] of Object.entries(r.samples||{})) rows.push(['Samples (Rs0)',k,v,0]);
   for(const a of r.adjustments) rows.push(['Adjustment:'+a.type,'#'+(a.orderNo??''),'',a.amount,`${a.reason||''} (by ${a.by||'?'})`]);
   for(const [z,v] of Object.entries(r.deliveryByZone)) rows.push(['Delivery zone '+z,'charged / rider fare / diff',v.orders,v.charged,`rider ${v.riderFare}; diff ${v.diff}`]);
