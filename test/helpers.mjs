@@ -2,7 +2,7 @@ import {chromium} from 'playwright-core';
 export const BASE=process.env.BASE||'http://127.0.0.1:8080/';
 export const IPAD_UA='Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 export const launch=()=>chromium.launch({executablePath:'/usr/bin/google-chrome',args:['--no-sandbox']});
-export async function newPage(b,{viewport={width:1366,height:768},ipad=false,init}={}){ const ctx=await b.newContext({viewport,userAgent:ipad?IPAD_UA:undefined,hasTouch:ipad});
+export async function newPage(b,{viewport={width:1366,height:768},ipad=false,init,userAgent,isMobile,hasTouch,deviceScaleFactor}={}){ const ctx=await b.newContext({viewport,userAgent:userAgent||(ipad?IPAD_UA:undefined),hasTouch:hasTouch??ipad,...(isMobile?{isMobile,deviceScaleFactor}:{})});
   if(init) await ctx.addInitScript(init); const p=await ctx.newPage(); p.errs=[]; p.on('pageerror',e=>p.errs.push(e.message)); p.ctx=ctx;
   await p.goto(BASE); await p.waitForFunction(()=>window.__ready); return p; }
 export const sleep=(p,ms=150)=>p.waitForTimeout(ms);

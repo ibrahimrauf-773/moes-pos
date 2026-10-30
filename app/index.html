@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="app.css"></head>
 <body><div class="fatal" id="loading">Loading Moe's POS…</div>
 <script>window.__BUILD='dev';
+/* Setup links opened in an already-open POS tab only change the hash; if the running app didn't switch to the Set PIN page, reload. */
+addEventListener('hashchange',function(){ if(/setpin/i.test(location.hash)) setTimeout(function(){ if(!document.body.classList.contains('setpin')) location.reload(); },400); });
 /* Self-updating: always check for a new build; when a new service worker takes over, reload once so new code actually runs. */
 if('serviceWorker' in navigator&&location.protocol!=='file:'){(function(){var sw=navigator.serviceWorker,had=!!sw.controller,done=false;
  function reload(){ if(done) return; done=true; try{ if(window.__pos&&window.__pos.App&&window.__pos.App.draft&&(window.__pos.App.draft.lines||[]).length){ window.__updatePending=true; window.dispatchEvent(new Event('pos-update-ready')); done=false; return; } }catch(e){} location.reload(); }

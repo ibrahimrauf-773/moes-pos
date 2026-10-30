@@ -15,6 +15,8 @@ self.addEventListener('fetch',e=>{ const req=e.request; const u=new URL(req.url)
   if(req.mode==='navigate'){ // page loads: try network briefly (gets updates), else cached app shell
     e.respondWith(timeout(fetch(req),3000).then(r=>{ if(r.ok){ const c=r.clone(); caches.open(CACHE).then(ca=>ca.put(INDEX,c)); return r; } throw new Error('bad'); })
       .catch(()=>caches.match(INDEX,{ignoreSearch:true}).then(r=>r||caches.match(new URL('./',self.registration.scope).href)))); return; }
-  // assets: cache first (instant, works offline); new versions arrive via a new sw.js VERSION
+  // app code (js/css/html/manifest): network first with a short timeout so a stale cached app never sticks; offline falls back to cache
+  if(/\.(js|css|html|webmanifest)$/.test(u.pathname)){ e.respondWith(timeout(fetch(req,{cache:'no-cache'}),3000).then(r=>{ if(r.ok){ const c=r.clone(); caches.open(CACHE).then(ca=>ca.put(req,c)); return r; } throw new Error('bad'); }).catch(()=>caches.match(req,{ignoreSearch:true}).then(r=>r||fetch(req)))); return; }
+  // other assets (icons/images): cache first; new versions arrive via a new sw.js VERSION
   e.respondWith(caches.match(req,{ignoreSearch:true}).then(hit=>hit||fetch(req).then(r=>{ if(r.ok&&!u.pathname.includes('/downloads/')){ const c=r.clone(); caches.open(CACHE).then(ca=>ca.put(req,c)); } return r; }))); });
 self.addEventListener('message',e=>{ if(e.data==='skipWaiting') self.skipWaiting(); });

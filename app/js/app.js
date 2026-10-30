@@ -61,8 +61,12 @@ async function renderSetPin(tok){ history.replaceState(null,'',location.pathname
       if(r==='taken'){ e.target.reset(); $('[data-t=setpin-go]').disabled=false; return err('Please choose another PIN'); }
       box(`<h2>PIN saved ✓</h2><p data-t="setpin-done">You can now sign in on the POS with your name and PIN. This link no longer works.</p>`); }
     catch(x){ $('[data-t=setpin-go]').disabled=false; err(x.message); } }; }
+// Setup-link token from the URL. Tolerant of what Safari/Messages/WhatsApp add: trailing punctuation, %-encoding, extra params, '#setpin' without '/'.
+export function setpinTok(h=location.hash+' '+location.search){ let x=String(h||''); try{ x=decodeURIComponent(x); }catch{} const m=/setpin[^#]*?[?&]t=([A-Za-z0-9_-]{20,100})/.exec(x); return m?m[1]:null; }
+const onSyncResult=async r=>{ if(r?.pushed!==undefined&&!App.settings.devicePrefix){ const st=await db.kvGet('settings'); if(st?.devicePrefix) App.settings.devicePrefix=st.devicePrefix; } if(r?.pulled&&App.user) await loadCfg(); else if(r?.pulled&&!App.user&&!document.body.classList.contains('setpin')&&$('.login')&&!document.activeElement?.closest?.('#pinf')){ await loadCfg(); renderLogin(); } renderStatus(); };
 export async function boot(){
-  const sp=/^#\/setpin\?t=([A-Za-z0-9_-]{20,100})$/.exec(location.hash); if(sp) return renderSetPin(sp[1]); // standalone page: no local POS data touched
+  addEventListener('hashchange',()=>{ const t=setpinTok(); if(t){ App.user=null; renderSetPin(t); } }); // link opened in an already-open tab: only the hash changes
+  { const t=setpinTok(); if(t) return renderSetPin(t); } // standalone page: no local POS data touched
   try{ await db.open(); }catch(e){ document.body.innerHTML='<div class="fatal">Storage unavailable: '+esc(e.message)+'. In Safari, turn off Private Browsing.</div>'; return; }
   if(!await db.kvGet('deviceId')) await db.kvSet('deviceId',db.uid());
   try{ for(const o of await db.all('orders')){ const note=L.repairRiderPayments(o,App.policy||{}); if(o.web?.id==='a290b78a-8b5e-419b-8367-01c646b698b5'&&o.rider&&o.rider.speedwayFare==null){ o.rider.speedwayFare=400; await db.put('orders',o); await db.put('log',{id:db.uid(),at:Date.now(),staffId:'-',staffName:'system',action:'repair-rider-payments',detail:{order:o.orderNo,note:'Speedway charged Rs 400 vs Rs 360 billed: Rs 40 delivery difference expense'}}); }
@@ -71,7 +75,7 @@ export async function boot(){
   if(navigator.storage?.persist){ try{ const t=new Promise(r=>setTimeout(()=>r(false),1500)); const p=await Promise.race([(async()=>await navigator.storage.persisted()||await navigator.storage.persist())(),t]); App.persisted=!!p; }catch{ App.persisted=false; } }
   App.draft=await db.kvGet('draft',null);
   addEventListener('online',renderStatus); addEventListener('offline',renderStatus);
-  db.onDirty(()=>Sync.kick()); Sync.startAuto(async r=>{ if(r?.pushed!==undefined&&!App.settings.devicePrefix){ const st=await db.kvGet('settings'); if(st?.devicePrefix) App.settings.devicePrefix=st.devicePrefix; } if(r?.pulled&&App.user) await loadCfg(); renderStatus(); }); setInterval(dailyBackupCheck,60*60*1000); setTimeout(dailyBackupCheck,3000);
+  db.onDirty(()=>Sync.kick()); Sync.startAuto(onSyncResult); setInterval(dailyBackupCheck,60*60*1000); setTimeout(dailyBackupCheck,3000);
   App.alertMute=!!(await db.kvGet('alertMute',false));
   setInterval(()=>{ if(App.view==='kds'&&App.user) renderKDS(); },10000);
   setInterval(()=>{ P.checkHelper().catch(()=>{}).finally(renderStatus); },30000); setInterval(renderStatus,15000); P.checkHelper().catch(()=>{}).finally(renderStatus);
@@ -117,7 +121,11 @@ function renderLogin(){ App.user=null; document.body.className='';
   let sel=null;
   $$('[data-staff]').forEach(b=>b.onclick=()=>{ sel=b.dataset.staff; if(!App.staff.find(x=>x.id===sel)?.pinHash){ $('#perr').textContent='PIN not set yet – use your setup link from the owner'; $('#pinf').classList.remove('hidden'); return; } $('#pinf').classList.remove('hidden'); $('#who').textContent=b.firstChild.textContent; $('#pin').value=''; $('#pin').focus(); });
   $$('[data-k]').forEach(b=>b.onclick=()=>{ const k=b.dataset.k, p=$('#pin'); if(k==='C') p.value=''; else if(k==='OK') $('#pinf').requestSubmit(); else p.value+=k; });
-  $('#pinf').onsubmit=async e=>{ e.preventDefault(); const s=await checkPin($('#pin').value); if(!s||s.id!==sel){ $('#perr').textContent='Wrong PIN'; return; }
+  $('#pinf').onsubmit=async e=>{ e.preventDefault(); const pin=$('#pin').value; let s=await checkPin(pin);
+    if((!s||s.id!==sel)&&/^\d{4,8}$/.test(pin)){ // a PIN just set via a setup link may not have synced to this device yet: pull now and retry once
+      const c=await Sync.config().catch(()=>({})); if(c.enabled){ $('#perr').textContent='Checking for new PINs…'; await Promise.race([Sync.syncNow().catch(()=>{}),new Promise(r=>setTimeout(r,6000))]); await loadCfg(); s=await checkPin(pin); }
+      else if(App.staff.find(x=>x.id===sel)?.needsSetup){ $('#perr').textContent="This device isn't connected to the shop's sync, so PINs set by link can't reach it. Sign in on the stall iPad, or ask the owner to connect this device."; return; } }
+    if(!s||s.id!==sel){ $('#perr').textContent='Wrong PIN'; return; }
     App.user=s; if(s.role==='elles'){ App.loc='mashion'; await db.kvSet('location','mashion'); App.draft=null; } await logAct('login'); setTimeout(()=>alertCheck(),300); App.view=s.role==='kitchen'?'kds':s.role==='stock'?'stocklog':'pos'; renderShell(); };
 }
 // ---------- shell ----------
@@ -957,7 +965,7 @@ function bindOnlineSettings(){ $('#onf')&&($('#onf').onsubmit=e=>{ e.preventDefa
 const speedwayHTML=r=>`<h3>Speedway riders</h3><table class="tbl" data-t="r-speedway"><tr><th>#</th><th>Zone</th><th>Collected</th><th>Fare</th><th>Rider owes</th><th>Settled</th></tr>${r.speedway.orders.map(x=>`<tr><td>${esc(x.orderNo)}</td><td>${esc(x.zone||'')}</td><td>${L.rs(x.collect)}</td><td>${L.rs(x.fare)}</td><td>${L.rs(x.amount)}</td><td>${x.method==='later'?(x.settledAt?'later → '+esc(PAYN(x.settledVia))+' '+L.fmtTime(x.settledAt):'<b class="warn">PENDING</b>'):esc(x.method==='none'?'nothing due':PAYN(x.method))}</td></tr>`).join('')}
   <tr><td colspan="4">Pending from tonight (NOT in drawer)</td><td data-t="r-sw-pending" colspan="2">${L.rs(r.speedway.pendingTonight)}</td></tr><tr><td colspan="4"><b>Speedway owes in total (all days)</b></td><td data-t="r-sw-outstanding" colspan="2"><b>${L.rs(r.speedway.outstanding||0)}</b></td></tr></table>`;
 
-window.__pos={focApprove,App,db,L,S,P,Sync,O,Snd,chime,alertCheck,setFlow,onOnlineRows,commitOrder,importBacklog,makeBackup,restore,snapshot,onHand,go,renderStatus};
+window.__pos={onSyncResult,focApprove,App,db,L,S,P,Sync,O,Snd,chime,alertCheck,setFlow,onOnlineRows,commitOrder,importBacklog,makeBackup,restore,snapshot,onHand,go,renderStatus};
 boot();
 
 // ---------- Waste / FOC / low stock / inventory reconciliation for reports ----------
