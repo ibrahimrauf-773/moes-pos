@@ -77,7 +77,7 @@ export function customerPrefs(orders,drinkIds=new Set(),policy={}){ const os=ord
 
 // Permission rules (policy from owner, Oct 28)
 export function discountNeedsOwner(role, d, policy){
-  if(!d) return false; if(role==='owner') return false;
+  if(!d) return false; if(role==='owner') return false; if(role==='elles') return true; // Elle's login: any discount needs an owner
   if(d.kind==='staff') return d.type!=='pct' || d.value>policy.staffMealPct;
   if(d.kind==='comp') return true;
   return d.type!=='pct' || d.value>policy.cashierMaxDiscountPct;
@@ -106,7 +106,7 @@ export function recipeCost(recipe, costByName){ let c=0, missing=[];
 // ---------- Nightly report (Accountant spec) ----------
 export function shiftReport({orders, expenses=[], shift=null, zones=[], payMethods=[], policy={}, settlements=[], outstanding=null}){
   const counted=orders.filter(isCounted);
-  const r={byChannel:{},byPay:{},items:{},adjustments:[],deliveryByZone:{},expenses:[],foc:[],fp:{orders:0,gross:0,commissionPct:policy.fpCommissionPct??23,commissionEst:0,payoutEst:0},samples:{}};
+  const r={byChannel:{},byPay:{},items:{},adjustments:[],deliveryByZone:{},expenses:[],foc:[],fp:{orders:0,gross:0,commissionPct:policy.fpCommissionPct??23,commissionEst:0,payoutEst:0},samples:{},collab:{elles:{name:"Elle's x Moe's",units:0,amount:0,items:{}}}};
   const ch=k=>r.byChannel[k]??={orders:0,gross:0};
   for(const o of counted){
     const t=computeTotals(o,policy); const c=ch(o.channel); c.orders++; c.gross+=t.total-(t.delivery||0); r.deliveryToSpeedway=(r.deliveryToSpeedway||0)+(t.delivery||0);
@@ -118,6 +118,8 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
       const key=l.itemId+'|'+l.name; const it=r.items[key]??={itemId:l.itemId,name:l.name,units:0,amount:0,sample:!!l.sample};
       it.units+=l.qty||1; it.amount+=l.foc?0:(l.unitPrice||0)*(l.qty||1)+(l.lineTotalOverride!=null?l.lineTotalOverride-lineUnit(l)*(l.qty||1):0);
       if(l.foc) r.foc.push({orderNo:o.orderNo,scope:'item',item:`${l.qty}x ${l.name}`,value:lineList(l),reason:l.foc.reason,by:l.foc.by});
+      if(isCollabId(l.itemId)){ const cb=r.collab.elles; const ci=cb.items[l.itemId]??={itemId:l.itemId,name:l.name,units:0,amount:0}; const amt=l.foc?0:lineTotal(l);
+        ci.units+=l.qty||1; ci.amount+=amt; cb.units+=l.qty||1; cb.amount+=amt; }
       if(l.sample){ r.samples[l.name]=(r.samples[l.name]||0)+(l.qty||1); }
       for(const a of l.addons||[]){ const ak='addon:'+a.id+'|'+a.name; const ai=r.items[ak]??={itemId:a.id,name:'Add-on: '+a.name,units:0,amount:0};
         ai.units+=l.qty||1; ai.amount+=l.foc?0:(a.price||0)*(l.qty||1); }
@@ -151,8 +153,11 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
             refunds:counted.reduce((a,o)=>a+refunded(o),0)};
   r.totals.net=r.totals.gross-r.totals.refunds;
   r.itemList=Object.values(r.items).sort((a,b)=>b.amount-a.amount||b.units-a.units);
+  // Elle's collab split: line amounts before any order-level discount; Moe's = item sales minus Elle's.
+  const cb=r.collab.elles; cb.itemList=Object.values(cb.items).sort((a,b)=>b.amount-a.amount||b.units-a.units); r.moesItems=r.salesItems-cb.amount;
   return r;
 }
+export const isCollabId=id=>/^elles_/.test(String(id||''));
 export function csvEscape(v){ v=v==null?'':String(v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
 export const toCSV=rows=>rows.map(r=>r.map(csvEscape).join(',')).join('\n');
 export function reportCSV(r, meta={}){
@@ -162,6 +167,8 @@ export function reportCSV(r, meta={}){
   rows.push(['Total','all channels',r.totals.orders,r.totals.gross]);
   for(const [k,v] of Object.entries(r.byPay)) rows.push(['Payment',k,v.count,v.amount]);
   for(const i of r.itemList) rows.push(['Item',i.name,i.units,i.amount]);
+  const cb=r.collab?.elles; if(cb&&cb.units){ for(const i of cb.itemList) rows.push(["Elle's x Moe's (collab)",i.name,i.units,i.amount]);
+    rows.push(["Elle's x Moe's (collab)","Elle's subtotal (split with Elle's)",cb.units,cb.amount],["Moe's","Moe's items subtotal (excl. Elle's)",'',r.moesItems]); }
   for(const [k,v] of Object.entries(r.samples||{})) rows.push(['Samples (Rs0)',k,v,0]);
   for(const a of r.adjustments) rows.push(['Adjustment:'+a.type,'#'+(a.orderNo??''),'',a.amount,`${a.reason||''} (by ${a.by||'?'})`]);
   for(const [z,v] of Object.entries(r.deliveryByZone)) rows.push(['Delivery zone '+z,'charged / rider fare / diff',v.orders,v.charged,`rider ${v.riderFare}; diff ${v.diff}`]);
@@ -201,7 +208,7 @@ export function agreed(logs,phase,itemId){ const v=logs.filter(l=>l.phase===phas
 export function reconcile({items,logs=[],prevLogs=[],moves=[],loc,date,tolPct=10,owner=false}){
   const rows=[]; const day=moves.filter(m=>m.location===loc&&businessDate(m.at,LOG_DATE_CUTOFF)===date&&!String(m.id).startsWith('cnt:'));
   const sum=(id,types)=>day.filter(m=>m.itemId===id&&types.includes(m.type)).reduce((a,m)=>a+m.qty,0);
-  for(const it of items){ if(it.check||it.status) continue; if(!(it[loc==='home'?'home':'main'])) continue;
+  for(const it of items){ if(it.check||it.status) continue; if(!(it[loc==='home'?'home':loc==='mashion'?'mashion':'main'])) continue;
     const f=it.countFactor||1, tol=Math.max(f, 0);
     const opens=logs.filter(l=>l.phase==='opening'&&l.counts?.[it.id]!=null), closes=logs.filter(l=>l.phase==='closing'&&l.counts?.[it.id]!=null);
     const prevClose=agreed(prevLogs,'closing',it.id); let opening=agreed(logs,'opening',it.id); const flags=[];
@@ -217,8 +224,8 @@ export function reconcile({items,logs=[],prevLogs=[],moves=[],loc,date,tolPct=10
     rows.push({id:it.id,name:it.name,loc,unit:it.countUnit||it.unit,opening:q(opening),receipts:q(receipts),sent:q(sent),sales:q(sales),waste:q(waste),expected:q(expected),closing:q(closing),variance:q(variance),
       cost:owner&&variance!=null&&it.costPerUnit?Math.round(variance*it.costPerUnit):null,flags}); }
   return rows; }
-export function lowStock(items,onHand,loc='main',checks={}){ return items.filter(i=>!i.status).map(i=>({i,oh:onHand[i.id+'|'+loc]||0})).filter(({i,oh})=>(i.reorderLevel>0&&oh<=i.reorderLevel)||i.reorderFlag||checks[i.id]==='reorder')
-  .map(({i,oh})=>({id:i.id,name:i.name,onHand:+(oh/(i.countFactor||1)).toFixed(2),unit:i.countUnit||i.unit,reorderLevel:+(i.reorderLevel/(i.countFactor||1)).toFixed(2),flag:!!i.reorderFlag||checks[i.id]==='reorder',supplier:i.supplier||''})); }
+export function lowStock(items,onHand,loc='main',checks={}){ return items.filter(i=>!i.status&&!i.collab&&(loc==='mashion'?!!i.bazaarOnly:!i.bazaarOnly)).map(i=>({i,oh:onHand[i.id+'|'+loc]||0})).filter(({i,oh})=>(i.reorderLevel>0&&oh<=i.reorderLevel)||i.reorderFlag||checks[i.id]==='reorder')
+  .map(({i,oh})=>({id:i.id,name:i.name,onHand:+(oh/(i.countFactor||1)).toFixed(2),unit:i.countUnit||i.unit,reorderLevel:+(i.reorderLevel/(i.countFactor||1)).toFixed(2),flag:!!i.reorderFlag||checks[i.id]==='reorder',supplier:i.supplier||'',bazaar:!!i.bazaarOnly})); }
 // Owner dashboard aggregates over orders of one business date
 export function dashboard(orders,policy={}){ const c=orders.filter(isCounted); const tot=o=>computeTotals(o,policy).total;
   const hourly={}; const items={}; const pay={}; const ch={};

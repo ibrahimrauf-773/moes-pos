@@ -51,67 +51,76 @@
 | 49 | Reports | Report math by channel/item and CSV export | PASS |  |
 | 50 | Reports | GST off by default; when on, added to total | PASS |  |
 | 51 | Bazaar | Mashion stall: pending prices, Rs0 samples, separate report with Donut Slider line, separate stock | PASS |  |
-| 52 | Backlog | Import 187 backlog orders = Rs 362,116; re-import idempotent; next no after max | PASS |  |
-| 53 | Recipes | Owner imports (encrypted), unlock with PIN, wrong PIN refused | PASS |  |
-| 54 | Recipes | Deployed bundle (dist) contains no recipe data | PASS |  |
-| 55 | Recipes | Cashier cannot open recipes view | PASS |  |
-| 56 | Offline | Orders persist across reload; draft cart recovered | PASS |  |
-| 57 | Offline | App loads and sells fully offline (service worker) | PASS |  |
-| 58 | Offline | Persistent-storage banner: hidden on desktop; on iPad shown, and stays dismissed after reload | PASS |  |
-| 59 | Offline | Persistent-storage denied shows warning banner (old) | PASS |  |
-| 60 | Failure | Storage quota full: clear error, no partial order | PASS |  |
-| 61 | Failure | commitOrder idempotent (double submit) | PASS |  |
-| 62 | Failure | Input validation: qty 0/100 and non-numeric refused | PASS |  |
-| 63 | Backup | Export backup, wipe, restore brings orders back; excludes recipes | PASS |  |
-| 64 | Backup | Bad restore file rejected | PASS |  |
-| 65 | Backup | Daily backup created automatically | PASS |  |
-| 66 | Settings | Configurable start number and device prefix | PASS |  |
-| 67 | Settings | Activity log records login, order, discount | PASS |  |
-| 68 | Sync | Two devices sync via Supabase mock; distinct numbers; recipes never synced | PASS |  |
-| 69 | Sync | Sync server down: sale still succeeds, error recorded, retried later | PASS |  |
-| 70 | Sync | Bad/expired session rejected by server, local data intact | PASS |  |
-| 71 | Printing | Laptop: receipt + kitchen ticket printed via helper (ESC/POS bytes), no recipe | PASS |  |
-| 72 | Printing | No helper: browser print fallback is ON by default (receipt + kitchen in one dialog) | PASS |  |
-| 73 | Printing | Printer offline: sale not blocked, job queued, retry prints later | PASS |  |
-| 74 | Printing | iPad: printing hidden, no print jobs | PASS |  |
-| 75 | Printing | iPad: Reprint receipt/kitchen on order row and detail use browser print dialog | PASS |  |
-| 76 | Charge screen | One-tap cash tender places order with change; bank/card one tap; split still works; screenshots | PASS |  |
-| 77 | Modals | Order detail closes via Close, ✕, Esc and click-outside; confirm modal too | PASS |  |
-| 78 | Orders view | Pills, filters, sort, search, owner CSV, row click detail, dining change; 1366 + iPad screenshots | PASS |  |
-| 79 | Charge screen | Split row: cash 100 + HBL remaining auto-fills, change on cash part, till counts each method; receipt + detail list parts | PASS |  |
-| 80 | Top bar | Printer dot red without helper, sync pill, mute toggle (off by default) silences alert; proof button in detail | PASS |  |
-| 81 | Payments | Rider COD: one clean payment line; #1607 bad data repaired on load | PASS |  |
-| 82 | Printing | Laptop without helper: reprint falls back to browser print | PASS |  |
-| 83 | Customers | Phone search (+92 normalised) matches; prefs, usual heat default, repeat last order | PASS |  |
-| 84 | Customers | Quick add customer, dedupe by phone, profile edit and history | PASS |  |
-| 85 | Pay Later | Requires customer; unpaid not drawer cash; partial then full settle; dues in report | PASS |  |
-| 86 | Printing | Receipt and kitchen ticket show customer name; delivery receipt shows phone + address | PASS |  |
-| 87 | Log Inventory | Ayesha (PIN 7777) lands on Log Inventory; no POS/dashboard access | PASS |  |
-| 88 | Log Inventory | Waqar + Ayesha counts: mismatch flagged, duplicate blocked without owner, closing sets next stock, variance | PASS |  |
-| 89 | Log Inventory | Owner-approved edit keeps history | PASS |  |
-| 90 | Migration | Older device gets Ayesha, new sheet items and timers on upgrade | PASS |  |
-| 91 | Waste | Waste log deducts stock, shows reason/by; cost owner-only | PASS |  |
-| 92 | FOC | Item FOC by Waqar: Rs 0, stock deducted, listed separately | PASS |  |
-| 93 | FOC | Whole-order FOC needs owner/Waqar approval; others rejected | PASS |  |
-| 94 | KDS | Ticket timer turns amber at 12 min and red at 20 min; thresholds editable | PASS |  |
-| 95 | Dashboard | Owner dashboard: totals, AOV, hourly, top items, payment & channel split, previous days; cashier blocked | PASS |  |
-| 96 | Reports | Low-stock list for Supply in nightly report (reorder levels + Reorder flags from closing checklist) | PASS |  |
-| 97 | Layout | No horizontal overflow on any view at 1366x768 | PASS |  |
-| 98 | Layout | No horizontal overflow on any view at 1024x768 | PASS |  |
-| 99 | Layout | No horizontal overflow on any view at 768x1024 | PASS |  |
-| 100 | Orders | Row actions: 2 print icons + ⋯ in one line, Pay only when due, none on void; refund/void in detail | PASS |  |
-| 101 | Redesign | Heat strip adds with one tap; Combo 3 asks tender + slider heat separately | PASS |  |
-| 102 | Redesign | Favourites row has 6 items; upsell offers Baja/Lemonade with a combo | PASS |  |
-| 103 | Redesign | Done card after charge with big number; New order clears; Enter/Esc/number shortcuts never fire while typing | PASS |  |
-| 104 | Redesign | Removing a cart line shows a 5s undo bar that restores it | PASS |  |
-| 105 | Redesign | Slim nav: More menu; cashier sees locked owner pages; live count for all, sales snapshot only for owner | PASS |  |
-| 106 | Redesign | Orders hub tabs + stage chips; Rush toggles and persists | PASS |  |
-| 107 | Polish | Reports owner-only: cashier sees it locked and cannot open it; refund, waste log (More) and FOC still work for cashier | PASS |  |
-| 108 | Polish | Stage chips: separate Accepted chip, "Out for delivery" label; status values unchanged | PASS |  |
-| 109 | Polish | More menu closes on Esc; phone bar is icon-only with branch + logout in More | PASS |  |
-| 110 | Polish | Combo 3 builder opens at top, 5 heats on one row, styled add-on chips | PASS |  |
-| 111 | Polish | Quick-cash tiles do not wrap on iPad | PASS |  |
-| 112 | Polish | Void: owner PIN + reason in one popup; wrong PIN rejected | PASS |  |
-| 113 | Polish | Phone order detail keeps item names on one or two lines | PASS |  |
+| 52 | EllesRole | Elle's login: bazaar only, Elle's items only, no reports/settings/till/customers/history, code paths enforce it | PASS |  |
+| 53 | EllesRole | Elle's can self-approve FOC on Elle's items (reason, approvedBy Elle's, stock deducted, FOC report) but never on Moe's items | PASS |  |
+| 54 | Bazaar | Elle's x Moe's collab: alongside Moe's stall items, no heat popup, separate report/CSV, own bazaar stock | PASS |  |
+| 55 | Backlog | Import 187 backlog orders = Rs 362,116; re-import idempotent; next no after max | PASS |  |
+| 56 | Recipes | Owner imports (encrypted), unlock with PIN, wrong PIN refused | PASS |  |
+| 57 | Recipes | Deployed bundle (dist) contains no recipe data | PASS |  |
+| 58 | Recipes | Cashier cannot open recipes view | PASS |  |
+| 59 | Offline | Orders persist across reload; draft cart recovered | PASS |  |
+| 60 | Offline | App loads and sells fully offline (service worker) | PASS |  |
+| 61 | Offline | Persistent-storage banner: hidden on desktop; on iPad shown, and stays dismissed after reload | PASS |  |
+| 62 | Offline | Persistent-storage denied shows warning banner (old) | PASS |  |
+| 63 | Failure | Storage quota full: clear error, no partial order | PASS |  |
+| 64 | Failure | commitOrder idempotent (double submit) | PASS |  |
+| 65 | Failure | Input validation: qty 0/100 and non-numeric refused | PASS |  |
+| 66 | Backup | Export backup, wipe, restore brings orders back; excludes recipes | PASS |  |
+| 67 | Backup | Bad restore file rejected | PASS |  |
+| 68 | Backup | Daily backup created automatically | PASS |  |
+| 69 | Settings | Configurable start number and device prefix | PASS |  |
+| 70 | Settings | Activity log records login, order, discount | PASS |  |
+| 71 | Sync | Two devices sync via Supabase mock; distinct numbers; recipes never synced | PASS |  |
+| 72 | Sync | Sync server down: sale still succeeds, error recorded, retried later | PASS |  |
+| 73 | Sync | Bad/expired session rejected by server, local data intact | PASS |  |
+| 74 | Printing | Laptop: receipt + kitchen ticket printed via helper (ESC/POS bytes), no recipe | PASS |  |
+| 75 | Printing | No helper: browser print fallback is ON by default (receipt + kitchen in one dialog) | PASS |  |
+| 76 | Printing | Printer offline: sale not blocked, job queued, retry prints later | PASS |  |
+| 77 | Printing | iPad: printing hidden, no print jobs | PASS |  |
+| 78 | Printing | iPad: Reprint receipt/kitchen on order row and detail use browser print dialog | PASS |  |
+| 79 | Charge screen | One-tap cash tender places order with change; bank/card one tap; split still works; screenshots | PASS |  |
+| 80 | Modals | Order detail closes via Close, ✕, Esc and click-outside; confirm modal too | PASS |  |
+| 81 | Orders view | Pills, filters, sort, search, owner CSV, row click detail, dining change; 1366 + iPad screenshots | PASS |  |
+| 82 | Charge screen | Split row: cash 100 + HBL remaining auto-fills, change on cash part, till counts each method; receipt + detail list parts | PASS |  |
+| 83 | Top bar | Printer dot red without helper, sync pill, mute toggle (off by default) silences alert; proof button in detail | PASS |  |
+| 84 | Payments | Rider COD: one clean payment line; #1607 bad data repaired on load | PASS |  |
+| 85 | Printing | Laptop without helper: reprint falls back to browser print | PASS |  |
+| 86 | Customers | Phone search (+92 normalised) matches; prefs, usual heat default, repeat last order | PASS |  |
+| 87 | Customers | Quick add customer, dedupe by phone, profile edit and history | PASS |  |
+| 88 | Pay Later | Requires customer; unpaid not drawer cash; partial then full settle; dues in report | PASS |  |
+| 89 | Printing | Receipt and kitchen ticket show customer name; delivery receipt shows phone + address | PASS |  |
+| 90 | Log Inventory | Ayesha (PIN 7777) lands on Log Inventory; no POS/dashboard access | PASS |  |
+| 91 | Log Inventory | Waqar + Ayesha counts: mismatch flagged, duplicate blocked without owner, closing sets next stock, variance | PASS |  |
+| 92 | Log Inventory | Owner-approved edit keeps history | PASS |  |
+| 93 | Migration | Older device gets Ayesha, new sheet items and timers on upgrade | PASS |  |
+| 94 | Migration | Existing device keeps its Mashion menu edits and gains Elle's items, stock and usage | PASS |  |
+| 95 | Waste | Waste log deducts stock, shows reason/by; cost owner-only | PASS |  |
+| 96 | FOC | Item FOC by Waqar: Rs 0, stock deducted, listed separately | PASS |  |
+| 97 | FOC | Whole-order FOC needs owner/Waqar approval; others rejected | PASS |  |
+| 98 | KDS | Ticket timer turns amber at 12 min and red at 20 min; thresholds editable | PASS |  |
+| 99 | Dashboard | Owner dashboard: totals, AOV, hourly, top items, payment & channel split, previous days; cashier blocked | PASS |  |
+| 100 | Reports | Low-stock list for Supply in nightly report (reorder levels + Reorder flags from closing checklist) | PASS |  |
+| 101 | Layout | No horizontal overflow on any view at 1366x768 | PASS |  |
+| 102 | Layout | No horizontal overflow on any view at 1024x768 | PASS |  |
+| 103 | Layout | No horizontal overflow on any view at 768x1024 | PASS |  |
+| 104 | Orders | Row actions: 2 print icons + ⋯ in one line, Pay only when due, none on void; refund/void in detail | PASS |  |
+| 105 | Redesign | Popup adds a main; Combo 3 asks tender + slider heat separately | PASS |  |
+| 106 | Redesign | Favourites row has 6 items; upsell offers Baja/Lemonade with a combo | PASS |  |
+| 107 | Redesign | Done card after charge with big number; New order clears; Enter/Esc/number shortcuts never fire while typing | PASS |  |
+| 108 | Redesign | Removing a cart line shows a 5s undo bar that restores it | PASS |  |
+| 109 | Redesign | Slim nav: More menu; cashier sees locked owner pages; live count for all, sales snapshot only for owner | PASS |  |
+| 110 | Redesign | Orders hub tabs + stage chips; Rush toggles and persists | PASS |  |
+| 111 | Polish | Reports owner-only: cashier sees it locked and cannot open it; refund, waste log (More) and FOC still work for cashier | PASS |  |
+| 112 | Polish | Stage chips: separate Accepted chip, "Out for delivery" label; status values unchanged | PASS |  |
+| 113 | Polish | More menu closes on Esc; phone bar is icon-only with branch + logout in More | PASS |  |
+| 114 | Popup | Item popup fits 1366x657 without scrolling, equal heat buttons, 2 rows for Combo 3, Add shows running total | PASS |  |
+| 115 | Popup | Cancel, Esc and outside tap close without adding; extras and drinks still add with one tap | PASS |  |
+| 116 | Popup | Tapping a main already in the cart reopens the popup to edit that line | PASS |  |
+| 117 | Popup | Combo 3 uses the same Rush and favourites paths as other mains | PASS |  |
+| 118 | Popup | Popup fits and adds on iPad (1024x768) and phone (390x844) | PASS |  |
+| 119 | Popup | Heat, extras and notes reach the kitchen ticket data unchanged | PASS |  |
+| 120 | Polish | Quick-cash tiles do not wrap on iPad | PASS |  |
+| 121 | Polish | Void: owner PIN + reason in one popup; wrong PIN rejected | PASS |  |
+| 122 | Polish | Phone order detail keeps item names on one or two lines | PASS |  |
 
-**113/113 passed**
+**122/122 passed**

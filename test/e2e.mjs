@@ -125,6 +125,41 @@ test('Bazaar','Mashion stall: pending prices, Rs0 samples, separate report with 
   await H.go(p,'reports'); ok((await p.textContent('[data-t=r-donut]')).includes('1'),'donut line'); ok((await p.textContent('[data-t=r-samples]')).includes('SAMPLE'),'samples'); 
   await p.click('#locbtn'); await H.sleep(p,300); await H.go(p,'reports'); eq((await p.textContent('[data-t=r-orders]')).replace(/\D/g,''),'0'); await p.ctx.close(); });
 
+test('EllesRole',"Elle's login: bazaar only, Elle's items only, no reports/settings/till/customers/history, code paths enforce it", async()=>{ const p=await fresh(); await H.login(p,'elles','8888');
+  const st=await p.evaluate(()=>({loc:window.__pos.App.loc,view:window.__pos.App.view,bz:document.body.classList.contains('bazaar'),nav:[...document.querySelectorAll('[data-nav]')].map(b=>b.dataset.nav),more:!!document.querySelector('#morebtn'),loc2:!!document.querySelector('#locbtn'),moes:!!document.querySelector('[data-item=combo3]'),elles:document.querySelectorAll('[data-item^=elles_]').length,cust:!!document.querySelector('[data-t=cphone]')}));
+  eq(st,{loc:'mashion',view:'pos',bz:true,nav:['pos'],more:false,loc2:false,moes:false,elles:8,cust:false});
+  for(const v of ['reports','dash','settings','inventory','stocklog','till','customers','orders','live','kds','recipes']){ await H.go(p,v); ok((await p.textContent('#main')).includes('not available for your role'),'view open: '+v); }
+  await H.go(p,'pos');
+  // code path: injecting a Moe's item into the cart is rejected at checkout and at commit
+  const r=await p.evaluate(async()=>{ const {App,commitOrder}=window.__pos; const it=App.menus.mashion.items.find(i=>!/^elles_/.test(i.id)); App.draft.lines.push({itemId:it.id,name:it.name,price:it.price,qty:1,addons:[]});
+    let e1='',e2=''; try{ await commitOrder({...App.draft,id:'x1',orderNo:1,status:'paid',payments:[],createdAt:Date.now(),businessDate:'2026-10-30'}); }catch(e){ e1=e.message; } App.draft.lines=[]; return [e1]; });
+  ok(/only sell Elle/.test(r[0]),'commit allowed Moe item: '+r[0]);
+  await H.add(p,'elles_takis'); eq(await p.$('.modal-bg'),null); eq(await H.pay(p,{cash:500}),{ok:true});
+  const o=await H.lastOrder(p); eq([o.location,o.lines.map(l=>l.itemId)],['mashion',['elles_takis']]);
+  const stk=await p.evaluate(async()=>(await window.__pos.onHand())['elles_stk_takis|mashion']); eq(stk,-1); 
+  await p.ctx.close(); });
+test('EllesRole',"Elle's can self-approve FOC on Elle's items (reason, approvedBy Elle's, stock deducted, FOC report) but never on Moe's items", async()=>{ const p=await fresh(); await H.login(p,'elles','8888');
+  await H.add(p,'elles_plain'); await p.click('[data-t=foc-line-0]'); await H.sleep(p); await p.click('[data-t=modal-ok]'); await H.sleep(p); ok(await p.$('[data-t=foc-reason]'),'reason required');
+  await p.fill('[data-t=foc-reason]','tasting sample'); await p.click('[data-t=modal-ok]'); await H.sleep(p,300); eq(await p.$('[data-t=foc-pin]'),null);
+  eq(await H.pay(p,{}),{ok:true}); const o=await H.lastOrder(p); eq([o.lines[0].foc.reason,o.lines[0].foc.byId],['tasting sample','elles']);
+  const acts=await p.evaluate(async()=>(await window.__pos.db.all('log')).filter(a=>a.action==='foc-item').map(a=>a.detail.approvedBy)); ok(JSON.stringify(acts).includes("Elle's"),'foc log '+JSON.stringify(acts));
+  // code path: focApprove refuses Moe's lines for Elle's
+  const e=await p.evaluate(async()=>{ const {App,S}=window.__pos; const it=App.menus.mashion.items.find(i=>!/^elles_/.test(i.id)); try{ await window.__pos.focApprove('x',[{itemId:it.id}]); return 'allowed'; }catch(x){ return x.message; } });
+  ok(/only FOC Elle/.test(e),'Moe FOC allowed: '+e);
+  // owner sees it in the report's FOC section attributed to Elle's
+  await p.click('#logout'); await H.login(p,'shaheer','1111'); await H.go(p,'reports'); const txt=await p.textContent('#main'); ok(/FOC/.test(txt)&&txt.includes("Elle's")&&txt.includes('tasting sample'),'FOC report');
+  await p.ctx.close(); });
+test('Bazaar',"Elle's x Moe's collab: alongside Moe's stall items, no heat popup, separate report/CSV, own bazaar stock", async()=>{ const p=await owner(); await p.click('#locbtn'); await H.sleep(p,300);
+  ok(await p.$('[data-t=collab-sec]'),'collab section'); ok(await p.$('[data-item=combo3]')&&await p.$('[data-item=elles_takis]'),'both menus');
+  await ev(p,async()=>{ await __pos.db.put('stockMoves',{id:'t-elles',itemId:'elles_stk_takis',location:'mashion',qty:10,type:'delivery',at:Date.now()}); });
+  await p.click('[data-item=elles_takis]'); await H.sleep(p); ok(!(await p.$('[data-t=item-popup]'))&&!(await p.$('[data-t=modal]')),'no popup'); await p.click('[data-qp="0"]'); await H.sleep(p);
+  await H.add(p,'elles_mini_dip'); await H.add(p,'baja'); eq(await total(p),500*2+500+250); await H.pay(p,{cash:1750});
+  const oh=await ev(p,async()=>(await __pos.db.all('stockMoves')).filter(m=>m.itemId==='elles_stk_takis'&&m.location==='mashion').reduce((a,m)=>a+m.qty,0)); eq(oh,8);
+  await H.go(p,'reports'); const t=await p.textContent('[data-t=r-elles]'); ok(t.includes('Takis Doughnut')&&t.includes('Mini Cookies'),t); eq((await p.textContent('[data-t=r-elles-total]')).replace(/\D/g,''),'1500'); eq((await p.textContent('[data-t=r-moes-total]')).replace(/\D/g,''),'250');
+  const csv=await ev(p,()=>__pos.L.reportCSV(__pos.App.lastReport.r,{})); ok(/Elle's subtotal[^\n]*,3,1500/.test(csv)&&/excl\. Elle's\),,250/.test(csv),csv.slice(0,900));
+  await H.go(p,'stocklog'); ok(await p.$('[data-t=sl-elles_stk_takis]'),'elles count row');
+  await H.go(p,'inventory'); ok(!((await p.$('[data-t=lowstock]'))?(await p.textContent('[data-t=lowstock]')):'').includes("Elle's"),'no reorder alerts for elles');
+  await p.click('#locbtn'); await H.sleep(p,300); await H.go(p,'reports'); ok(!(await p.$('[data-t=r-elles]')),'main has no elles'); ok(!(await p.textContent('[data-t=r-lowstock]')).includes("Elle's"),'elles not in main low stock'); await p.ctx.close(); });
 // ---- Backlog ----
 test('Backlog','Import 187 backlog orders = Rs 362,116; re-import idempotent; next no after max', async()=>{ const p=await owner(); const d=JSON.parse(fs.readFileSync('/workspace/moes-pos-private/backlog_import.json','utf8'));
   eq(await ev(p,d=>__pos.importBacklog(d),d),187); eq(await ev(p,d=>__pos.importBacklog(d),d),0); const r=await ev(p,async()=>{ const os=(await __pos.db.all('orders')).filter(__pos.L.isCounted); return {n:os.length,t:os.reduce((a,o)=>a+__pos.L.computeTotals(o,__pos.App.policy).total,0)}; });
@@ -336,6 +371,8 @@ test('Log Inventory','Owner-approved edit keeps history', async()=>{ const p=awa
 test('Migration','Older device gets Ayesha, new sheet items and timers on upgrade', async()=>{ const p=await fresh(); await ev(p,async()=>{ await __pos.db.del('staff','ayesha'); await __pos.db.del('inventory','donuts'); await __pos.db.kvSet('seedVer',1); });
   await p.reload(); await p.waitForFunction(()=>window.__ready); ok(await p.$('[data-staff=ayesha]'),'no ayesha'); ok(await ev(p,()=>__pos.db.get('inventory','donuts')),'no donuts'); await p.ctx.close(); });
 
+test('Migration',"Existing device keeps its Mashion menu edits and gains Elle's items, stock and usage", async()=>{ const p=await fresh(); await ev(p,async()=>{ const m=await __pos.db.get('menus','mashion'); m.items=m.items.filter(i=>!i.id.startsWith('elles_')); m.items[0].price=1550; await __pos.db.put('menus',m); for(const i of await __pos.db.all('inventory')) if(i.bazaarOnly) await __pos.db.del('inventory',i.id); const u=await __pos.db.kvGet('usage'); for(const k of Object.keys(u)) if(k.startsWith('elles_')) delete u[k]; await __pos.db.kvSet('usage',u); });
+  await p.reload(); await p.waitForFunction(()=>window.__ready); const r=await ev(p,async()=>{ const m=await __pos.db.get('menus','mashion'); return [m.items[0].price,m.items.filter(i=>i.id.startsWith('elles_')).length,(await __pos.db.all('inventory')).filter(i=>i.bazaarOnly).length,!!(await __pos.db.kvGet('usage')).elles_takis]; }); eq(r,[1550,8,8,true]); await p.ctx.close(); });
 // ---- Waste / FOC ----
 test('Waste','Waste log deducts stock, shows reason/by; cost owner-only', async()=>{ const p=await cashier(); await H.go(p,'inventory'); await p.click('[data-t=inv-wastage]'); await H.sleep(p);
   await p.selectOption('[data-t=inv-item]','chicken'); await p.selectOption('[data-t=inv-loc]','main'); await p.fill('[data-t=inv-qty]','500'); await p.selectOption('[data-t=inv-wreason]','Dropped / spilled'); await p.fill('[data-t=inv-reason]','tray fell'); await H.modalOk(p);

@@ -5,6 +5,14 @@ export const PAY_METHODS = [
   {id:'cash',name:'Cash'},{id:'hbl',name:'HBL ••6903 (transfer/Raast)'},{id:'bah',name:'Bank Al Habib ••5901'},
   {id:'card',name:'Card'},{id:'fp_online',name:'Foodpanda online'}];
 const m=(id,name,cat,price,o={})=>({id,name,cat,price,on:true,heat:false,cost:0,allergens:'',...o});
+// Elle's x Moe's "Sweet Meets Spicy" collab (bazaar only). Sold alongside Moe's stall items; sales reported separately
+// (split with Elle's) and each item has its own bazaar stock entry (id 'elles_stk_<item>'), deducted 1 per unit sold.
+export const COLLAB_CAT="Elle's x Moe's";
+export const ELLES_ITEMS=[['elles_plain','Plain Glaze Doughnut',300],['elles_hazelnut','Hazelnut Glaze Doughnut',300],['elles_takis','Takis Doughnut',500],
+  ['elles_marsh','Marshmallow Doughnut',450],['elles_smores','Smores Doughnut',450],['elles_mini_dip','Mini Cookies with Dip',500,'box'],
+  ['elles_choc_chip','Chocolate Chip Cookie',350],['elles_dbl_choc','Double Chocolate Chip Cookie',350]];
+export const isCollab=id=>/^elles_/.test(String(id||''));
+const ELLES_MENU=()=>ELLES_ITEMS.map(([id,name,price])=>({id,name,cat:COLLAB_CAT,price,on:true,heat:false,cost:0,allergens:'',collab:'elles'}));
 // menu: 'store' = in-store + WhatsApp; 'fp' = Foodpanda price list; 'mashion' = bazaar stall (PENDING prices)
 export const MENUS = {
  store:[
@@ -29,7 +37,8 @@ export const MENUS = {
   m('combo3','Combo 3','Stall',1500,{heat:true,pending:true}), m('mozz','Mozzarella Sticks','Stall',1100,{heat:true,pending:true}),
   m('donut_slider','Donut Slider (Elles collab)','Stall',1200,{heat:true,pending:true}), m('mac','Mac n Cheese','Stall',1600,{heat:true,pending:true}),
   m('baja','Baja Blast','Stall',250,{pending:true}),
-  m('sample_tender','SAMPLE tender piece','Samples',0,{sample:true}), m('sample_munchkin','SAMPLE munchkin donut slider','Samples',0,{sample:true})],
+  m('sample_tender','SAMPLE tender piece','Samples',0,{sample:true}), m('sample_munchkin','SAMPLE munchkin donut slider','Samples',0,{sample:true}),
+  ...ELLES_MENU()],
 };
 // add-ons offered as modifiers on mains (price per add-on). FP modifiers: drink prices differ.
 export const ADDONS = {
@@ -53,7 +62,8 @@ export const ZONES=[
 export const STAFF=[
  {id:'shaheer',name:'Shaheer',role:'owner',pin:'1111'},{id:'ibrahim',name:'Ibrahim',role:'owner',pin:'2222'},{id:'ruqaiya',name:'Ruqaiya',role:'owner',pin:'3333'},
  {id:'waqar',name:'Waqar',role:'cashier',pin:'4444'},{id:'shan',name:'Shan',role:'kitchen',pin:'5555'},{id:'amir',name:'Amir',role:'kitchen',pin:'6666'},
- {id:'ayesha',name:'Ayesha',role:'stock',pin:'7777'}];
+ {id:'ayesha',name:'Ayesha',role:'stock',pin:'7777'},
+ {id:'elles',name:"Elle's",role:'elles',pin:'8888'}]; // restricted: Elle's collab items at the bazaar only
 export const POLICY={kdsButtons:false,staffMealPct:30,cashierMaxDiscountPct:10,cashierCanRefund:true,amberMinutes:12,lateMinutes:20,focApprovers:['waqar'],fpCommissionPct:23,gstOn:false,gstPct:0};
 export const EXPENSE_CODES=[
  ['5000','Chicken/Poultry'],['5010','Produce'],['5020','Dry Goods'],['5030','Dairy'],['5040','Bread & Bakery'],['5050','Oil & Spices'],['5100','Beverage Cost'],['5200','Packaging & To-Go'],
@@ -65,7 +75,8 @@ const I=(id,name,unit,pack,packUnit,reorder,supplier='',o={})=>({id,name,unit,pa
 // Sections mirror the shop's paper sheets ("Home Daily Inventory Log" and "Main Branch Daily Inventory Log").
 export const SHEET_SECTIONS={
  home:['Raw – Chicken & dairy','Raw – Dry goods & bread','Raw – Sauces & liquids','Frozen','Raw – Spices','Ready items (made at Home, not yet sent)'],
- main:['Ready items from Home','Fries','Drinks, desserts & bread','Kitchen','Packaging','Supplies checklist']};
+ main:['Ready items from Home','Fries','Drinks, desserts & bread','Kitchen','Packaging','Supplies checklist'],
+ mashion:["Elle's x Moe's collab (bazaar)"]};
 // home/main: [section index, name on that sheet if different]. countUnit/countFactor: unit written on the sheet vs. internal unit
 // (e.g. fries counted in kg, stored in g because sales deduct grams). check:'ok' = OK/Reorder tick only; status:'FHL' = gas cylinder.
 const H=(sec,name)=>({sec,name}), M=H;
@@ -120,6 +131,8 @@ export const INVENTORY=[
  I('drink_bags','Drink bags','pc',100,'pack',20,'Zia / Abdul Bari',{cat:'Supplies',main:M(5),check:'ok'}),
  // Not on the paper sheets (kept for automatic deduction of Baja Blast)
  I('baja_mix','Baja Blast mix (40% Dew/40% 7up/20% Gatorade)','ml',1500,'bottle',2000,'Branch',{cat:'Drinks'}),
+ // Elle's x Moe's collab stock (Mashion stall only). Mini Cookies with Dip counted per box/serving. ASSUMPTION: reorder/low at 3.
+ ...ELLES_ITEMS.map(([id,name,,u])=>I('elles_stk_'+id.slice(6),"Elle's – "+name,u==='box'?'box':'pcs',1,u==='box'?'box/serving':'pc',0,"Elle's",{cat:COLLAB_CAT,mashion:{sec:0,name},bazaarOnly:true,collab:'elles'})),
 ];
 // ASSUMPTION (sheet counts sauces in grams; POS sells 2 oz dip cups): ~55 g per 2 oz cup. Owner can edit in Settings.
 export const SAUCE_G_PER_DIP=55;
@@ -130,6 +143,8 @@ export const USAGE={
  dinner_roll:[['dinner_rolls',2]], mac:[['round500',1,true],['mac_sauce',1]],
  combo1:[['lp24',1,true],['dinner_rolls',1]], combo2:[['lp24',1,true]], combo3:[['lp24',1,true]], mozz:[['lp24',1,true]], loaded_fries:[['lp24',1,true]],
  _order:[['takeaway_bags',1,true]],
+
+ ...Object.fromEntries(ELLES_ITEMS.map(([id])=>[id,[['elles_stk_'+id.slice(6),1]]])),
 };
 
 // ---- Online orders (Supabase project moes-online-orders). URL + anon key are PUBLIC (same as the website);
