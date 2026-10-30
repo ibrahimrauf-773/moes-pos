@@ -63,7 +63,8 @@ export const STAFF=[
  {id:'shaheer',name:'Shaheer',role:'owner',pin:'1111'},{id:'ibrahim',name:'Ibrahim',role:'owner',pin:'2222'},{id:'ruqaiya',name:'Ruqaiya',role:'owner',pin:'3333'},
  {id:'waqar',name:'Waqar',role:'cashier',pin:'4444'},{id:'shan',name:'Shan',role:'kitchen',pin:'5555'},{id:'amir',name:'Amir',role:'kitchen',pin:'6666'},
  {id:'ayesha',name:'Ayesha',role:'stock',pin:'7777'},
- {id:'elles',name:"Elle's",role:'elles',pin:'8888'}]; // restricted: Elle's collab items at the bazaar only
+ {id:'momin',name:"Momin (Elle's)",role:'elles',pin:null,selfPin:true},
+ {id:'samad',name:"Samad (Elle's)",role:'elles',pin:null,selfPin:true}]; // restricted Elle's role; they set their own PINs via one-time setup links (no PIN in code)
 export const POLICY={kdsButtons:false,staffMealPct:30,cashierMaxDiscountPct:10,cashierCanRefund:true,amberMinutes:12,lateMinutes:20,focApprovers:['waqar'],fpCommissionPct:23,gstOn:false,gstPct:0};
 export const EXPENSE_CODES=[
  ['5000','Chicken/Poultry'],['5010','Produce'],['5020','Dry Goods'],['5030','Dairy'],['5040','Bread & Bakery'],['5050','Oil & Spices'],['5100','Beverage Cost'],['5200','Packaging & To-Go'],

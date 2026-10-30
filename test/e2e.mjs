@@ -125,7 +125,19 @@ test('Bazaar','Mashion stall: pending prices, Rs0 samples, separate report with 
   await H.go(p,'reports'); ok((await p.textContent('[data-t=r-donut]')).includes('1'),'donut line'); ok((await p.textContent('[data-t=r-samples]')).includes('SAMPLE'),'samples'); 
   await p.click('#locbtn'); await H.sleep(p,300); await H.go(p,'reports'); eq((await p.textContent('[data-t=r-orders]')).replace(/\D/g,''),'0'); await p.ctx.close(); });
 
-test('EllesRole',"Elle's login: bazaar only, Elle's items only, no reports/settings/till/customers/history, code paths enforce it", async()=>{ const p=await fresh(); await H.login(p,'elles','8888');
+// Test-only: give Momin (Elle's) a PIN locally (real users set theirs through a one-time setup link).
+async function ellesUser(){ const p=await fresh(); await p.evaluate(async()=>{ const {db}=window.__pos; const s=await db.get('staff','momin'); const h=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('moes:momin:8888')); s.pinHash=btoa(String.fromCharCode(...new Uint8Array(h))); await db.put('staff',s,true); }); await p.reload(); await p.waitForSelector('[data-staff]'); return p; }
+test('EllesRole',"Elle's users have no PIN until set via link; placeholder login retired", async()=>{ const p=await fresh(); const t=await p.textContent('[data-staff=momin]'); ok(/PIN not set/.test(t),t); ok(await p.$('[data-staff=samad]'),'samad'); eq(await p.$('[data-staff=elles]'),null);
+  await p.click('[data-staff=momin]'); await p.fill('[data-t=pin]','0000'); await p.click('[data-k=OK]'); await H.sleep(p,300); eq(await p.$('[data-nav]'),null); await p.ctx.close(); });
+test('EllesRole',"Setup link page: validates, strips token from URL, generic 'choose another PIN', sends only salted hashes", async()=>{ const p=await fresh(); const sent=[];
+  await p.route('**/rest/v1/rpc/moes_setpin_info',r=>r.fulfill({status:200,contentType:'application/json',body:JSON.stringify({name:"Test (Elle's)",ids:['shaheer','zz']})}));
+  let n=0; await p.route('**/rest/v1/rpc/moes_set_pin',r=>{ sent.push(r.request().postData()); r.fulfill({status:200,contentType:'application/json',body:JSON.stringify(n++?'ok':'taken')}); });
+  await p.goto(H.BASE+'#/setpin?t=TESTTOKEN_abcdefghijklmnop'); await p.reload(); await p.waitForSelector('[data-t=setpin-name]'); ok(!p.url().includes('TESTTOKEN'),'token still in URL');
+  await p.fill('[data-t=setpin-p]','4321'); await p.fill('[data-t=setpin-c]','4320'); await p.click('[data-t=setpin-go]'); await H.sleep(p); ok(/do not match/.test(await p.textContent('[data-t=setpin-err]')),'mismatch');
+  await p.fill('[data-t=setpin-p]','4321'); await p.fill('[data-t=setpin-c]','4321'); await p.click('[data-t=setpin-go]'); await H.sleep(p,400); eq(await p.textContent('[data-t=setpin-err]'),'Please choose another PIN');
+  await p.fill('[data-t=setpin-p]','5678'); await p.fill('[data-t=setpin-c]','5678'); await p.click('[data-t=setpin-go]'); await p.waitForSelector('[data-t=setpin-done]');
+  ok(sent.every(b=>!b.includes('4321')&&!b.includes('5678'))&&JSON.parse(sent[1]).p_hashes.zz,'plain PIN sent'); await p.ctx.close(); });
+test('EllesRole',"Elle's login: bazaar only, Elle's items only, no reports/settings/till/customers/history, code paths enforce it", async()=>{ const p=await ellesUser(); await H.login(p,'momin','8888');
   const st=await p.evaluate(()=>({loc:window.__pos.App.loc,view:window.__pos.App.view,bz:document.body.classList.contains('bazaar'),nav:[...document.querySelectorAll('[data-nav]')].map(b=>b.dataset.nav),more:!!document.querySelector('#morebtn'),loc2:!!document.querySelector('#locbtn'),moes:!!document.querySelector('[data-item=combo3]'),elles:document.querySelectorAll('[data-item^=elles_]').length,cust:!!document.querySelector('[data-t=cphone]')}));
   eq(st,{loc:'mashion',view:'pos',bz:true,nav:['pos'],more:false,loc2:false,moes:false,elles:8,cust:false});
   for(const v of ['reports','dash','settings','inventory','stocklog','till','customers','orders','live','kds','recipes']){ await H.go(p,v); ok((await p.textContent('#main')).includes('not available for your role'),'view open: '+v); }
@@ -138,10 +150,10 @@ test('EllesRole',"Elle's login: bazaar only, Elle's items only, no reports/setti
   const o=await H.lastOrder(p); eq([o.location,o.lines.map(l=>l.itemId)],['mashion',['elles_takis']]);
   const stk=await p.evaluate(async()=>(await window.__pos.onHand())['elles_stk_takis|mashion']); eq(stk,-1); 
   await p.ctx.close(); });
-test('EllesRole',"Elle's can self-approve FOC on Elle's items (reason, approvedBy Elle's, stock deducted, FOC report) but never on Moe's items", async()=>{ const p=await fresh(); await H.login(p,'elles','8888');
+test('EllesRole',"Elle's can self-approve FOC on Elle's items (reason, approvedBy Elle's, stock deducted, FOC report) but never on Moe's items", async()=>{ const p=await ellesUser(); await H.login(p,'momin','8888');
   await H.add(p,'elles_plain'); await p.click('[data-t=foc-line-0]'); await H.sleep(p); await p.click('[data-t=modal-ok]'); await H.sleep(p); ok(await p.$('[data-t=foc-reason]'),'reason required');
   await p.fill('[data-t=foc-reason]','tasting sample'); await p.click('[data-t=modal-ok]'); await H.sleep(p,300); eq(await p.$('[data-t=foc-pin]'),null);
-  eq(await H.pay(p,{}),{ok:true}); const o=await H.lastOrder(p); eq([o.lines[0].foc.reason,o.lines[0].foc.byId],['tasting sample','elles']);
+  eq(await H.pay(p,{}),{ok:true}); const o=await H.lastOrder(p); eq([o.lines[0].foc.reason,o.lines[0].foc.byId],['tasting sample','momin']);
   const acts=await p.evaluate(async()=>(await window.__pos.db.all('log')).filter(a=>a.action==='foc-item').map(a=>a.detail.approvedBy)); ok(JSON.stringify(acts).includes("Elle's"),'foc log '+JSON.stringify(acts));
   // code path: focApprove refuses Moe's lines for Elle's
   const e=await p.evaluate(async()=>{ const {App,S}=window.__pos; const it=App.menus.mashion.items.find(i=>!/^elles_/.test(i.id)); try{ await window.__pos.focApprove('x',[{itemId:it.id}]); return 'allowed'; }catch(x){ return x.message; } });
