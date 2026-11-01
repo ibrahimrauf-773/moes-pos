@@ -44,7 +44,7 @@ export const MENUS = {
 export const ADDONS = {
  store:[{id:'dinner_roll',name:'+ Dinner Roll',price:40},{id:'moes_sauce',name:"+ Moe's Sauce",price:120},{id:'white_sauce',name:'+ White Sauce',price:120},{id:'hot_honey',name:'+ Hot Honey',price:100},{id:'curly_fries',name:'Curly Fries',price:150},{id:'baja',name:'+ Baja Blast',price:199}],
  fp:[{id:'dinner_roll',name:'+ Dinner Roll',price:40},{id:'moes_sauce',name:"+ Moe's Sauce",price:120},{id:'hot_honey',name:'+ Hot Honey',price:100},{id:'curly_fries',name:'Curly Fries',price:150},{id:'baja',name:'Drink: Baja',price:200},{id:'lemonade',name:'Drink: Lemonade',price:170},{id:'arizona',name:'Drink: Arizona',price:200}],
- mashion:[],
+ mashion:[{id:'hot_honey',name:'+ Hot Honey',price:200}],
 };
 // Speedway zones (owner-confirmed Oct 28): customer charge = rider fare, both editable.
 const Z=(id,fare,areas)=>({id,name:'Zone '+id,customerCharge:fare,riderFare:fare,areas});
