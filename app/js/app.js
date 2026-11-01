@@ -32,6 +32,11 @@ async function migrate(){ const v=await db.kvGet('seedVer',1); if(v>=3) return;
   await db.kvSet('usage',S.USAGE); await db.kvSet('seedVer',3); }
 // Elle's x Moe's collab (idempotent, every boot so a menu synced from an older device can't drop it): adds missing
 // collab menu items to the Mashion menu, missing collab stock entries and usage keys. Never touches existing records.
+// One-time Mashion price update (2026-11-01): Mac n Cheese 1600→1800, Baja Blast 250→300. Only changes items still at the old price
+// (never overrides an owner edit). Past orders keep their own line prices. Store/FP menus untouched.
+async function mashionPrices(){ if(await db.kvGet('mashionPrices1101')) return; const m=await db.get('menus','mashion');
+  if(m){ let ch=false; for(const [id,from,to] of [['mac',1600,1800],['baja',250,300]]){ const it=(m.items||[]).find(i=>i.id===id); if(it&&it.price===from){ it.price=to; ch=true; } } if(ch) await db.put('menus',m); }
+  await db.kvSet('mashionPrices1101',true); }
 async function ensureCollab(){ const m=await db.get('menus','mashion');
   if(m){ const have=new Set((m.items||[]).map(i=>i.id)); const add=S.MENUS.mashion.filter(i=>S.isCollab(i.id)&&!have.has(i.id)); if(add.length){ m.items=[...(m.items||[]),...add.map(i=>({...i}))]; await db.put('menus',m); } }
   for(const st of S.STAFF) if(st.selfPin&&!(await db.get('staff',st.id))) await putSeedStaff(st);
@@ -71,7 +76,7 @@ export async function boot(){
   if(!await db.kvGet('deviceId')) await db.kvSet('deviceId',db.uid());
   try{ for(const o of await db.all('orders')){ const note=L.repairRiderPayments(o,App.policy||{}); if(o.web?.id==='a290b78a-8b5e-419b-8367-01c646b698b5'&&o.rider&&o.rider.speedwayFare==null){ o.rider.speedwayFare=400; await db.put('orders',o); await db.put('log',{id:db.uid(),at:Date.now(),staffId:'-',staffName:'system',action:'repair-rider-payments',detail:{order:o.orderNo,note:'Speedway charged Rs 400 vs Rs 360 billed: Rs 40 delivery difference expense'}}); }
     if(note){ await db.put('orders',o); await db.put('log',{id:db.uid(),at:Date.now(),staffId:'-',staffName:'system',action:'repair-rider-payments',detail:{order:o.orderNo,note}}); if(o.web&&o.rider?.settledAt) setTimeout(()=>O.enqueue({kind:'patch',remoteId:o.web.id,orderNo:o.orderNo,body:{rider_amount_received:o.rider.amount}}).catch(()=>{}),3000); } } }catch(e){ console.warn('rider repair',e); }
-  await seed(); await migrate(); try{ await ensureCollab(); }catch(e){ console.warn('collab',e); } await loadCfg();
+  await seed(); await migrate(); try{ await ensureCollab(); }catch(e){ console.warn('collab',e); } try{ await mashionPrices(); }catch(e){ console.warn('mashion prices',e); } await loadCfg();
   if(navigator.storage?.persist){ try{ const t=new Promise(r=>setTimeout(()=>r(false),1500)); const p=await Promise.race([(async()=>await navigator.storage.persisted()||await navigator.storage.persist())(),t]); App.persisted=!!p; }catch{ App.persisted=false; } }
   App.draft=await db.kvGet('draft',null);
   addEventListener('online',renderStatus); addEventListener('offline',renderStatus);

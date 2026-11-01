@@ -35,8 +35,8 @@ export const MENUS = {
      .map(([i,n,p])=>m(i,n,'Beverages',p,{on:false}))],
  mashion:[
   m('combo3','Combo 3','Stall',1500,{heat:true,pending:true}), m('mozz','Mozzarella Sticks','Stall',1100,{heat:true,pending:true}),
-  m('donut_slider','Donut Slider (Elles collab)','Stall',1200,{heat:true,pending:true}), m('mac','Mac n Cheese','Stall',1600,{heat:true,pending:true}),
-  m('baja','Baja Blast','Stall',250,{pending:true}),
+  m('donut_slider','Donut Slider (Elles collab)','Stall',1200,{heat:true,pending:true}), m('mac','Mac n Cheese','Stall',1800,{heat:true,pending:true}),
+  m('baja','Baja Blast','Stall',300,{pending:true}),
   m('sample_tender','SAMPLE tender piece','Samples',0,{sample:true}), m('sample_munchkin','SAMPLE munchkin donut slider','Samples',0,{sample:true}),
   ...ELLES_MENU()],
 };
