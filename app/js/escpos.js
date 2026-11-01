@@ -31,6 +31,7 @@ export function receipt(o, settings={}){
   d.bold(1).line(cols('TOTAL',rs(t.total))).bold(0);
   const cps=(o.payments||[]).filter(p=>!(p.rider||p.method==='rider_fare'||p.method==='speedway_due'||p.ref==='Speedway settlement'));
   for(const p of cps) d.line(cols('Paid: '+(PAY[p.method]||({rider_fare:'Speedway fare',speedway_due:'Speedway'})[p.method]||String(p.method).replace(/_/g,' ')),rs(p.amount)));
+  { const ct=cps.reduce((x,p)=>x+(p.method==='card'&&p.cardTax?p.cardTax:0),0); if(ct){ d.line(cols('Card tax 8%',rs(ct))); d.bold(1).line(cols('CARD CHARGED',rs(cps.reduce((x,p)=>x+(p.method==='card'?(p.charged||p.amount):0),0)))).bold(0); } }
   if(o.rider?.collect) d.line(cols('Paid: Cash on delivery',rs(o.rider.collect)));
   if(o.change&&cps.some(p=>p.method==='cash')) d.line(cols('Change',rs(o.change)));
   { const due=Math.max(0,t.total-cps.reduce((a,p)=>a+(p.amount||0),0)-(o.rider?.collect||0)); if(o.status!=='void'&&due>0) d.bold(1).line(cols(o.credit?'PAY LATER - DUE':'UNPAID - DUE',rs(due))).bold(0); }

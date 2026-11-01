@@ -104,15 +104,20 @@ export function recipeCost(recipe, costByName){ let c=0, missing=[];
   return {batch:c, perUnit:recipe.yieldQty?c/recipe.yieldQty:0, missing}; }
 
 // ---------- Nightly report (Accountant spec) ----------
+// Card machine tax: customer pays food amount + 8% (rounded to the rupee). Sales stay at the food amount; tax is kept separate.
+export const CARD_TAX_PCT=8;
+export const cardGross=a=>Math.round((a||0)*(100+CARD_TAX_PCT)/100);
+export const cardBase=g=>Math.round((g||0)*100/(100+CARD_TAX_PCT));
+export const orderCardTax=o=>(o.payments||[]).reduce((a,p)=>a+(p.method==='card'&&!p.settle?(p.cardTax||0):0),0);
 export function shiftReport({orders, expenses=[], shift=null, zones=[], payMethods=[], policy={}, settlements=[], outstanding=null}){
   const counted=orders.filter(isCounted);
   const r={byChannel:{},byPay:{},items:{},adjustments:[],deliveryByZone:{},expenses:[],foc:[],fp:{orders:0,gross:0,commissionPct:policy.fpCommissionPct??23,commissionEst:0,payoutEst:0},samples:{},collab:{elles:{name:"Elle's x Moe's",units:0,amount:0,discount:0,net:0,discounts:[],items:{}}}};
-  const ch=k=>r.byChannel[k]??={orders:0,gross:0};
+  r.cardTax=0; const ch=k=>r.byChannel[k]??={orders:0,gross:0};
   for(const o of counted){
     const t=computeTotals(o,policy); const c=ch(o.channel); c.orders++; c.gross+=t.total-(t.delivery||0); r.deliveryToSpeedway=(r.deliveryToSpeedway||0)+(t.delivery||0);
     if(o.rider&&o.rider.speedwayFare!=null&&o.rider.speedwayFare!==(t.delivery||0)){ const diff=o.rider.speedwayFare-(t.delivery||0); (r.speedwayDiff??=[]).push({orderNo:o.orderNo,charged:t.delivery||0,fare:o.rider.speedwayFare,diff,name:'Speedway delivery difference'}); r.speedwayDiffTotal=(r.speedwayDiffTotal||0)+diff; }
     if(o.channel==='foodpanda'){ r.fp.orders++; r.fp.gross+=t.total; }
-    for(const p of [...custPayments(o),...riderEntries(o)]){ if((p.settle||p.bd)&&p.bd&&p.bd!==o.businessDate) continue; (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; }
+    for(const p of [...custPayments(o),...riderEntries(o)]){ if((p.settle||p.bd)&&p.bd&&p.bd!==o.businessDate) continue; (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; if(p.method==='card') r.cardTax+=p.cardTax||0; }
     if(!custPayments(o).length && o.channel==='foodpanda'){ (r.byPay.fp_online??={count:0,amount:0}); r.byPay.fp_online.count++; r.byPay.fp_online.amount+=t.total; }
     let cbo=0, ogross=0;
     for(const l of o.lines||[]){ ogross+=l.foc?0:lineTotal(l); if(isCollabId(l.itemId)&&!l.foc) cbo+=lineTotal(l);
@@ -135,6 +140,7 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
   for(const o of orders.filter(o=>!isCounted(o))) r.adjustments.push({orderNo:o.orderNo,type:o.status,amount:computeTotals(o,policy).total,reason:o.voidReason||'',by:o.voidBy||''});
   r.salesItems=Object.values(r.byChannel).reduce((a,c)=>a+c.gross,0); r.speedwayDiffTotal=r.speedwayDiffTotal||0; r.profitAfterDelivery=r.salesItems-r.speedwayDiffTotal;
   r.dues={newCredit:counted.reduce((a,o)=>a+due(o,policy),0),creditOrders:counted.filter(o=>due(o,policy)>0).map(o=>({orderNo:o.orderNo,name:o.customer?.name||'',phone:o.customer?.phone||'',due:due(o,policy)})),collected:0,collectedList:[],outstanding};
+  r.cardCollected=(r.byPay.card?.amount||0)+r.cardTax;
   for(const p of settlements){ (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount; r.dues.collected+=p.amount; r.dues.collectedList.push(p); }
   for(const o of counted) for(const p of custPayments(o)) if(p.settle&&p.bd===o.businessDate){ r.dues.collected+=p.amount; r.dues.collectedList.push({...p,orderNo:o.orderNo,name:o.customer?.name}); }
   // Speedway rider settlements for orders of this business date (cash counts in the drawer only once received)
