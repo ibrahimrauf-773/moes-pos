@@ -20,8 +20,8 @@ export const MENUS = {
   m('combo3','Combo 3 (1 tender + 1 slider)','Mains',1349,{heat:true}), m('loaded_fries','Loaded Fries','Mains',900,{heat:true}),
   m('mozz','Mozzarella Sticks (3)','Mains',1050,{heat:true}), m('mac',"Moe's Mac n Cheese",'Mains',1500,{heat:true}),
   m('dinner_roll','Extra Dinner Roll','Extras',40), m('moes_sauce',"Extra Sauce (Moe's)",'Extras',120), m('white_sauce','White Sauce','Extras',120),
-  m('hot_honey','Hot Honey','Extras',100), m('curly_fries','Curly Fries upgrade','Extras',150),
-  m('baja','Baja Blast','Drinks',199), m('lemonade','Lemonade','Drinks',199,{on:false}), m('arizona','Arizona Ice Tea','Drinks',249,{on:false}),
+  m('hot_honey','Hot Honey','Extras',200), m('curly_fries','Curly Fries upgrade','Extras',150),
+  m('baja','Baja Blast','Drinks',250), m('lemonade','Lemonade','Drinks',199,{on:false}), m('arizona','Arizona Ice Tea','Drinks',249,{on:false}),
   m('donut','Glazed Donut','Dessert',399)],
  fp:[
   m('combo1','Combo 1','Combos',1199,{heat:true}), m('combo2','Combo 2','Combos',1349,{heat:true,on:false}), m('combo3','Combo 3','Combos',1299,{heat:true,on:false}),
@@ -44,7 +44,7 @@ export const MENUS = {
 // add-on 'items' (optional) = only offered on those menu item ids; no 'items' = offered on every item that takes add-ons.
 export const addonFor=(a,itemId)=>a.on!==false&&(!Array.isArray(a.items)||a.items.includes(itemId)); // on:false = out of stock (hidden)
 export const ADDONS = {
- store:[{id:'dinner_roll',name:'+ Dinner Roll',price:40},{id:'moes_sauce',name:"+ Moe's Sauce",price:120},{id:'white_sauce',name:'+ White Sauce',price:120},{id:'hot_honey',name:'+ Hot Honey',price:100},{id:'curly_fries',name:'Curly Fries',price:150},{id:'baja',name:'+ Baja Blast',price:199},{id:'swap_curly',name:'Swap to Curly Fries',price:150,items:['combo1','combo2','combo3','mozz'],on:false}],
+ store:[{id:'dinner_roll',name:'+ Dinner Roll',price:40},{id:'moes_sauce',name:"+ Moe's Sauce",price:120},{id:'white_sauce',name:'+ White Sauce',price:120},{id:'hot_honey',name:'+ Hot Honey',price:200},{id:'curly_fries',name:'Curly Fries',price:150},{id:'baja',name:'+ Baja Blast',price:250},{id:'swap_curly',name:'Swap to Curly Fries',price:150,items:['combo1','combo2','combo3','mozz'],on:false}],
  fp:[{id:'dinner_roll',name:'+ Dinner Roll',price:40},{id:'moes_sauce',name:"+ Moe's Sauce",price:120},{id:'hot_honey',name:'+ Hot Honey',price:100},{id:'curly_fries',name:'Curly Fries',price:150},{id:'baja',name:'Drink: Baja',price:200},{id:'lemonade',name:'Drink: Lemonade',price:170},{id:'arizona',name:'Drink: Arizona',price:200}],
  mashion:[{id:'hot_honey',name:'+ Hot Honey',price:200}],
 };
