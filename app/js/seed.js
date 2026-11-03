@@ -19,6 +19,7 @@ export const MENUS = {
   m('combo1','Combo 1 (2 tenders)','Mains',1249,{heat:true}), m('combo2','Combo 2 (2 sliders)','Mains',1399,{heat:true}),
   m('combo3','Combo 3 (1 tender + 1 slider)','Mains',1349,{heat:true}), m('loaded_fries','Loaded Fries','Mains',900,{heat:true}),
   m('mozz','Mozzarella Sticks (3)','Mains',1050,{heat:true}), m('mac',"Moe's Mac n Cheese",'Mains',1500,{heat:true}),
+  m('straight_fries','Straight Fries','Sides',350), m('curly_fries_side','Curly Fries','Sides',600,{on:false}),
   m('dinner_roll','Extra Dinner Roll','Extras',40), m('moes_sauce',"Extra Sauce (Moe's)",'Extras',120), m('white_sauce','White Sauce','Extras',120),
   m('hot_honey','Hot Honey','Extras',200), m('curly_fries','Curly Fries upgrade','Extras',150),
   m('baja','Baja Blast','Drinks',250), m('lemonade','Lemonade','Drinks',199,{on:false}), m('arizona','Arizona Ice Tea','Drinks',249,{on:false}),
@@ -155,6 +156,7 @@ export const USAGE={
 export const ONLINE_DEFAULT={url:'https://qviqafndnhwpwnaqhfya.supabase.co',anonKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF2aXFhZm5kbmh3cHduYXFoZnlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxODYzMTEsImV4cCI6MjEwODc2MjMxMX0.CUXZlvl2IXCj7DARIsDdgBXqJVRf_pG8X7FBtHCHC1s',email:'pos@moes.local',pollMs:20000};
 // Website item_id -> POS store menu id
 export const WEB_ITEM_MAP={combo_1:'combo1',combo_2:'combo2',combo_3:'combo3',loaded_fries:'loaded_fries',mozzarella_sticks_3:'mozz',mac_n_cheese:'mac',
-  addon_dinner_roll:'dinner_roll',addon_extra_sauce:'moes_sauce',addon_hot_honey:'hot_honey',drink_baja_blast:'baja',drink_lemonade:'lemonade',drink_arizona_iced_tea:'arizona',dessert_glazed_donut:'donut'};
+  addon_dinner_roll:'dinner_roll',addon_extra_sauce:'moes_sauce',addon_hot_honey:'hot_honey',drink_baja_blast:'baja',drink_lemonade:'lemonade',drink_arizona_iced_tea:'arizona',dessert_glazed_donut:'donut',
+  side_straight_fries:'straight_fries',side_curly_fries:'curly_fries_side'};
 export const POS_TO_WEB={...Object.fromEntries(Object.entries(WEB_ITEM_MAP).map(([w,p])=>[p,w])),swap_curly:'swap_curly_fries'}; // website menu_availability keys (add-on availability too)
 export const EXTRA_PAY_NAMES={rider_fare:'Delivery charge (passed to Speedway)',speedway_due:'Speedway owes (pays later)',pay_later:'Pay Later'};

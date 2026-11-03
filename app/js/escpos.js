@@ -22,7 +22,7 @@ export function receipt(o, settings={}){
   if(o.customer?.name) d.bold(1).line('Customer: '+o.customer.name).bold(0);
   if(o.type==='delivery'||o.channel==='whatsapp'){ if(o.customer?.phone) d.line('Phone: '+o.customer.phone); if(o.customer?.address) wrap('Address: '+o.customer.address).forEach(x=>d.line(x)); }
   d.hr();
-  for(const l of o.lines){ d.line(cols(`${l.qty} x ${l.name}`, rs(lineTotal(l)).replace('Rs ',''))); if(l.heat) d.line('   Heat: '+heatText(l));
+  for(const l of o.lines){ if(l.voided){ d.line(cols(`${l.qty} x ${l.name} (VOID)`,'0')); continue; } d.line(cols(`${l.qty} x ${l.name}`, rs(lineTotal(l)).replace('Rs ',''))); if(l.heat) d.line('   Heat: '+heatText(l));
     for(const a of l.addons||[]) d.line(cols('   + '+a.name, a.price?String(a.price*l.qty):'')); }
   d.hr().line(cols('Subtotal',rs(t.subtotal)));
   if(t.discount) d.line(cols('Discount'+(o.discount?.kind==='staff'?' (staff meal)':''),'-'+rs(t.discount)));
@@ -39,9 +39,10 @@ export function receipt(o, settings={}){
 }
 export function kitchenTicket(o){
   const d=new Doc(); d.align(1).bold(1).huge(1).line(`#${o.orderNo??''}`).big(0).big(1).line(chName(o).toUpperCase()).big(0).bold(0).line(fmtDT(o.createdAt)).align(0);
+  if(o.addOn) d.align(1).bold(1).big(1).line('*** ADD-ON ITEMS ***').big(0).line('Add to existing order').bold(0).align(0);
   if(o.customer?.name) d.bold(1).line('CUSTOMER: '+o.customer.name).bold(0);
   d.hr('=');
-  for(const l of o.lines){ if(l.sample&&!l.qty) continue; d.bold(1).big(1).line(`${l.qty}x ${l.name}`).big(0).bold(0);
+  for(const l of o.lines){ if(l.sample&&!l.qty) continue; if(l.voided) continue; d.bold(1).big(1).line(`${l.qty}x ${l.name}`).big(0).bold(0);
     if(l.heat2){ d.bold(1).line('   TENDER HEAT: '+l.heat.toUpperCase()).line('   SLIDER HEAT: '+l.heat2.toUpperCase()).bold(0); } else if(l.heat) d.bold(1).line('   HEAT: '+l.heat.toUpperCase()).bold(0); for(const a of l.addons||[]) d.line('   + '+a.name); if(l.note) wrap('NOTE: '+l.note,45).forEach(s=>d.line('   '+s)); }
   if(o.note){ d.hr(); wrap('ORDER NOTE: '+o.note).forEach(s=>d.line(s)); }
   d.cut(); return d;

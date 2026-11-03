@@ -12,9 +12,9 @@ export const fmtDT=ts=>{const p=pkParts(ts);return `${p.y}-${pad(p.m)}-${pad(p.d
 export const rs=n=>'Rs '+Math.round(n||0).toLocaleString('en-US');
 
 export const lineUnit=l=>(l.unitPrice||0)+(l.addons||[]).reduce((a,x)=>a+(x.price||0),0);
-export const lineTotal=l=>l.foc?0:(l.lineTotalOverride!=null?l.lineTotalOverride:lineUnit(l)*(l.qty||1));
+export const lineTotal=l=>l.voided||l.foc?0:(l.lineTotalOverride!=null?l.lineTotalOverride:lineUnit(l)*(l.qty||1));
 // list value of a line ignoring FOC (for 'value given free' reporting)
-export const lineList=l=>l.lineTotalOverride!=null?l.lineTotalOverride:lineUnit(l)*(l.qty||1);
+export const lineList=l=>l.voided?0:l.lineTotalOverride!=null?l.lineTotalOverride:lineUnit(l)*(l.qty||1);
 export function computeTotals(o, settings={}){
   const subtotal=(o.lines||[]).reduce((a,l)=>a+lineTotal(l),0);
   let discount=0; const d=o.discount;
@@ -67,7 +67,7 @@ const top=(m,n=3)=>Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([k,v
 // Preferences derived from a customer's order history (newest last). drinkIds: menu ids in drink categories.
 export function customerPrefs(orders,drinkIds=new Set(),policy={}){ const os=orders.filter(isCounted).sort((a,b)=>a.createdAt-b.createdAt);
   const heat={}, items={}, addons={}, drinks={}, pay={}, addr={};
-  for(const o of os){ for(const l of o.lines||[]){ const q=l.qty||1; if(l.heat) heat[l.heat]=(heat[l.heat]||0)+q; (drinkIds.has(l.itemId)?drinks:items)[l.name]=((drinkIds.has(l.itemId)?drinks:items)[l.name]||0)+q;
+  for(const o of os){ for(const l of o.lines||[]){ if(l.voided) continue; const q=l.qty||1; if(l.heat) heat[l.heat]=(heat[l.heat]||0)+q; (drinkIds.has(l.itemId)?drinks:items)[l.name]=((drinkIds.has(l.itemId)?drinks:items)[l.name]||0)+q;
       for(const a of l.addons||[]) addons[a.name]=(addons[a.name]||0)+q; }
     for(const p of o.payments||[]) if(!p.settle) pay[p.method]=(pay[p.method]||0)+1; if(o.credit) pay.pay_later=(pay.pay_later||0)+1;
     if(o.customer?.address) addr[o.customer.address]=(addr[o.customer.address]||0)+1; }
@@ -86,7 +86,7 @@ export function canRefund(role,policy){ return role==='owner' || (role==='cashie
 export const needsReason=action=>['void','refund','comp','discount'].includes(action);
 
 // Stock deduction for one order. usage: {itemId:[[stockId,qty,takeawayOnly]]}; bom: [{menuItemId,lines:[{stockId,qty}]}]
-export function deductionsFor(order, usage={}, bom=[]){
+export function deductionsFor(order, usage={}, bom=[], {perOrder=true}={}){
   const out={}; const add=(id,q)=>{ if(!id||!q) return; out[id]=(out[id]||0)+q; };
   const takeaway=order.type!=='dine-in'&&order.type!=='dine_in';
   const bomMap=Object.fromEntries((bom||[]).map(b=>[b.menuItemId,b.lines]));
@@ -94,8 +94,8 @@ export function deductionsFor(order, usage={}, bom=[]){
     for(const [sid,q,tOnly] of (usage[itemId]||[])) if(!tOnly||takeaway) add(sid,q*qty);
     for(const b of (bomMap[itemId]||[])) add(b.stockId,b.qty*qty);
   };
-  for(const l of order.lines||[]){ one(l.itemId,l.qty||1); for(const a of l.addons||[]) one(a.id,l.qty||1); }
-  for(const [sid,q,tOnly] of (usage._order||[])) if(!tOnly||takeaway) add(sid,q);
+  for(const l of order.lines||[]){ if(l.voided) continue; one(l.itemId,l.qty||1); for(const a of l.addons||[]) one(a.id,l.qty||1); }
+  if(perOrder) for(const [sid,q,tOnly] of (usage._order||[])) if(!tOnly||takeaway) add(sid,q);
   return out;
 }
 // Recipe cost per yield unit given costs by ingredient name (owner-only usage)
@@ -120,7 +120,8 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
     for(const p of [...custPayments(o),...riderEntries(o)]){ if((p.settle||p.bd)&&p.bd&&p.bd!==o.businessDate) continue; (r.byPay[p.method]??={count:0,amount:0}); r.byPay[p.method].count++; r.byPay[p.method].amount+=p.amount||0; if(p.method==='card') r.cardTax+=p.cardTax||0; }
     if(!custPayments(o).length && o.channel==='foodpanda'){ (r.byPay.fp_online??={count:0,amount:0}); r.byPay.fp_online.count++; r.byPay.fp_online.amount+=t.total; }
     let cbo=0, ogross=0;
-    for(const l of o.lines||[]){ ogross+=l.foc?0:lineTotal(l); if(isCollabId(l.itemId)&&!l.foc) cbo+=lineTotal(l);
+    for(const l of o.lines||[]){ if(l.voided){ r.adjustments.push({orderNo:o.orderNo,type:'void item',item:`${l.qty}x ${l.name}`,amount:lineUnit(l)*(l.qty||1),reason:l.voided.reason||'',by:l.voided.by||'',at:l.voided.at}); continue; }
+      ogross+=l.foc?0:lineTotal(l); if(isCollabId(l.itemId)&&!l.foc) cbo+=lineTotal(l);
       const key=l.itemId+'|'+l.name; const it=r.items[key]??={itemId:l.itemId,name:l.name,units:0,amount:0,sample:!!l.sample};
       it.units+=l.qty||1; it.amount+=l.foc?0:(l.unitPrice||0)*(l.qty||1)+(l.lineTotalOverride!=null?l.lineTotalOverride-lineUnit(l)*(l.qty||1):0);
       if(l.foc) r.foc.push({orderNo:o.orderNo,scope:'item',item:`${l.qty}x ${l.name}`,value:lineList(l),reason:l.foc.reason,by:l.foc.by});
@@ -131,7 +132,7 @@ export function shiftReport({orders, expenses=[], shift=null, zones=[], payMetho
         ai.units+=l.qty||1; ai.amount+=l.foc?0:(a.price||0)*(l.qty||1); }
     }
     if(cbo&&t.discount){ const share=Math.min(cbo,Math.round(t.discount*cbo/Math.max(ogross,1))); const cb=r.collab.elles; cb.discount+=share; cb.discounts.push({orderNo:o.orderNo,type:o.discount?.kind==='foc'?'FOC':o.discount?.kind||'discount',amount:share,reason:o.discount?.reason||'',by:o.discount?.approvedBy||''}); }
-    if(o.discount?.kind==='foc') r.foc.push({orderNo:o.orderNo,scope:'order',item:(o.lines||[]).map(l=>`${l.qty}x ${l.name}`).join(', '),value:t.discount,reason:o.discount.reason||'',by:o.discount.approvedBy||''});
+    if(o.discount?.kind==='foc') r.foc.push({orderNo:o.orderNo,scope:'order',item:(o.lines||[]).filter(l=>!l.voided).map(l=>`${l.qty}x ${l.name}`).join(', '),value:t.discount,reason:o.discount.reason||'',by:o.discount.approvedBy||''});
     else if(o.discount && t.discount) r.adjustments.push({orderNo:o.orderNo,type:o.discount.kind==='comp'?'comp':(o.discount.kind==='staff'?'staff meal':'discount'),amount:t.discount,reason:o.discount.reason||'',by:o.discount.approvedBy||o.staffId||''});
     for(const f of o.refunds||[]) r.adjustments.push({orderNo:o.orderNo,type:'refund',amount:f.amount,reason:f.reason,by:f.by,method:f.method});
     if(o.delivery){ const z=r.deliveryByZone[o.delivery.zone||'?']??={orders:0,charged:0,riderFare:0,diff:0};
@@ -296,3 +297,31 @@ export function webOrderToPos(w,{webToPos={},zones=[]}={}){ const c=w.customer||
     payments:bank?[{method:bank,amount:w.total,at:Date.parse(w.created_at),by:'website',ref:'website transfer',verified:!!w.payment_verified,web:true}]:[],
     unpaid:!bank, web:{id:w.id,ref:w.website_ref,total:w.total,payment_method:w.payment_method,proof:w.payment_proof_url||null,verified:!!w.payment_verified,created_at:w.created_at},
     flow:{kind:w.order_type==='pickup'?'pickup':'delivery',status:w.status,ts:Object.fromEntries(Object.entries(w.status_timestamps||{}).map(([k,v])=>[k,Date.parse(v)]))}}; }
+
+// ---- Item void / add items to an existing order ----
+// Totals are recomputed from lines for POS orders; Foodpanda and website orders carry an authoritative external total,
+// so their lines can't be edited here (whole-order void still works for them).
+export const editableTotals=o=>!(o.channel==='foodpanda'||o.channel==='website'||o.fp?.total!=null||o.web);
+export const isLive=o=>!!o&&isCounted(o)&&o.status!=='closed';
+export const canVoidItem=(o,i)=>isLive(o)&&editableTotals(o)&&!!(o.lines||[])[i]&&!o.lines[i].voided&&(o.lines||[]).filter(l=>!l.voided).length>1;
+// Unpaid = live POS order with money still owed (open, COD, Pay Later / tab not fully paid) and nothing refunded.
+export const canAddItems=(o,policy={})=>isLive(o)&&editableTotals(o)&&!refunded(o)&&!o.rider?.settledAt&&paid(o)<computeTotals(o,policy).total;
+// Recompute stored totals, card tax and unpaid flags after the lines changed. Returns the new totals.
+export function refreshTotals(o,policy={}){ const t=computeTotals(o,policy); o.totals=t;
+  o.cardTax=(o.payments||[]).reduce((a,p)=>a+(p.cardTax||0),0);
+  if(o.rider&&!o.rider.settledAt){ const pre=custPayments(o).reduce((a,p)=>a+(p.amount||0),0); const collect=Math.max(0,t.total-pre); o.rider={...o.rider,collect,amount:Math.max(0,collect-(t.delivery||0)),fare:t.delivery||0}; }
+  o.unpaid=paid(o)<t.total; return t; }
+// Void one line: marks it (who/why/when), recomputes totals. Returns {line, stockBack:{stockId:qty}, overpaid}.
+export function voidLine(o,i,{by,reason,at=Date.now(),usage={},bom=[],policy={}}={}){
+  if(!reason||!String(reason).trim()) throw new Error('Reason is required');
+  if(!canVoidItem(o,i)) throw new Error(editableTotals(o)?'This item can\'t be voided (use Void order for the last item)':'Foodpanda/website order: void the whole order instead');
+  const l=o.lines[i]; const stockBack=deductionsFor({...o,lines:[l]},usage,bom,{perOrder:false});
+  l.voided={by,reason:String(reason).trim(),at}; const t=refreshTotals(o,policy);
+  return {line:l,stockBack,total:t.total,overpaid:Math.max(0,paid(o)-t.total)}; }
+// Append new lines to an unpaid order. Returns {lines, deduct:{stockId:qty}, batch}.
+export function addLines(o,lines,{by,at=Date.now(),batch=String(at),usage={},bom=[],policy={}}={}){
+  if(!canAddItems(o,policy)) throw new Error('Only unpaid open orders can take more items');
+  if(!lines?.length) throw new Error('No items to add');
+  const add=lines.map(l=>({...l,added:{by,at,batch}})); o.lines=[...(o.lines||[]),...add];
+  (o.addOns??=[]).push({batch,at,by,count:add.length}); refreshTotals(o,policy);
+  return {lines:add,batch,deduct:deductionsFor({...o,lines:add},usage,bom,{perOrder:false})}; }
