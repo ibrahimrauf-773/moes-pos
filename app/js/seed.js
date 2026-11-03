@@ -41,8 +41,10 @@ export const MENUS = {
   ...ELLES_MENU()],
 };
 // add-ons offered as modifiers on mains (price per add-on). FP modifiers: drink prices differ.
+// add-on 'items' (optional) = only offered on those menu item ids; no 'items' = offered on every item that takes add-ons.
+export const addonFor=(a,itemId)=>a.on!==false&&(!Array.isArray(a.items)||a.items.includes(itemId)); // on:false = out of stock (hidden)
 export const ADDONS = {
- store:[{id:'dinner_roll',name:'+ Dinner Roll',price:40},{id:'moes_sauce',name:"+ Moe's Sauce",price:120},{id:'white_sauce',name:'+ White Sauce',price:120},{id:'hot_honey',name:'+ Hot Honey',price:100},{id:'curly_fries',name:'Curly Fries',price:150},{id:'baja',name:'+ Baja Blast',price:199}],
+ store:[{id:'dinner_roll',name:'+ Dinner Roll',price:40},{id:'moes_sauce',name:"+ Moe's Sauce",price:120},{id:'white_sauce',name:'+ White Sauce',price:120},{id:'hot_honey',name:'+ Hot Honey',price:100},{id:'curly_fries',name:'Curly Fries',price:150},{id:'baja',name:'+ Baja Blast',price:199},{id:'swap_curly',name:'Swap to Curly Fries',price:150,items:['combo1','combo2','combo3','mozz'],on:false}],
  fp:[{id:'dinner_roll',name:'+ Dinner Roll',price:40},{id:'moes_sauce',name:"+ Moe's Sauce",price:120},{id:'hot_honey',name:'+ Hot Honey',price:100},{id:'curly_fries',name:'Curly Fries',price:150},{id:'baja',name:'Drink: Baja',price:200},{id:'lemonade',name:'Drink: Lemonade',price:170},{id:'arizona',name:'Drink: Arizona',price:200}],
  mashion:[{id:'hot_honey',name:'+ Hot Honey',price:200}],
 };
@@ -154,5 +156,5 @@ export const ONLINE_DEFAULT={url:'https://qviqafndnhwpwnaqhfya.supabase.co',anon
 // Website item_id -> POS store menu id
 export const WEB_ITEM_MAP={combo_1:'combo1',combo_2:'combo2',combo_3:'combo3',loaded_fries:'loaded_fries',mozzarella_sticks_3:'mozz',mac_n_cheese:'mac',
   addon_dinner_roll:'dinner_roll',addon_extra_sauce:'moes_sauce',addon_hot_honey:'hot_honey',drink_baja_blast:'baja',drink_lemonade:'lemonade',drink_arizona_iced_tea:'arizona',dessert_glazed_donut:'donut'};
-export const POS_TO_WEB=Object.fromEntries(Object.entries(WEB_ITEM_MAP).map(([w,p])=>[p,w]));
+export const POS_TO_WEB={...Object.fromEntries(Object.entries(WEB_ITEM_MAP).map(([w,p])=>[p,w])),swap_curly:'swap_curly_fries'}; // website menu_availability keys (add-on availability too)
 export const EXTRA_PAY_NAMES={rider_fare:'Delivery charge (passed to Speedway)',speedway_due:'Speedway owes (pays later)',pay_later:'Pay Later'};

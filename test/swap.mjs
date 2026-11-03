@@ -1,0 +1,10 @@
+import * as H from './helpers.mjs';
+const b=await H.launch(); const p=await H.newPage(b); await p.goto(H.BASE); await p.waitForFunction(()=>window.__ready); await H.login(p,'shaheer','1111');
+const chk=async ids=>{ await H.go(p,'pos'); const o=[]; for(const id of ids){ await p.click(`[data-item="${id}"]`); await H.sleep(p,250); o.push(id+':'+(!!(await p.$('[data-t=extra-swap_curly]')))+'/hh'+(!!(await p.$('[data-t=extra-hot_honey]')))); await p.click('[data-t=modal-cancel]').catch(()=>{}); await H.sleep(p,200); } console.log(o.join(' ')); };
+await chk(['combo1','mozz']);
+await H.go(p,'settings'); await p.click('[data-t=tab-addons]'); await H.sleep(p); await p.check('[data-t=addon-on-store-swap_curly]'); await p.click('#saveadd'); await H.sleep(p,300);
+await chk(['combo1','combo2','combo3','mozz','mac','loaded_fries']);
+await H.go(p,'pos'); await H.add(p,'combo1',{heat:'Hot',addons:['swap_curly']}); console.log('total',await p.textContent('[data-t=total]'));
+const t=+((await p.textContent('[data-t=total]')).replace(/\D/g,'')); await H.pay(p,{cash:t}); await H.sleep(p,500);
+const jobs=await p.evaluate(()=>__pos.db.all("printJobs").then(j=>j.map(x=>x.kind+":"+(x.text||x.preview||Object.keys(x).join(","))).join("\n"))); console.log(jobs.slice(0,900));
+await b.close();
