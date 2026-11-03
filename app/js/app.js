@@ -41,6 +41,12 @@ async function mashionPrices(){ if(await db.kvGet('mashionPrices1101')) return; 
 async function mashionHotHoney(){ if(await db.kvGet('mashionHotHoney1101')) return; const m=await db.get('menus','mashion');
   if(m){ const a=m.addons||(m.addons=[]); const h=a.find(x=>x.id==='hot_honey'); if(!h) a.push({id:'hot_honey',name:'+ Hot Honey',price:200}); else h.price=200; await db.put('menus',m); }
   await db.kvSet('mashionHotHoney1101',true); }
+// One-time (2026-11-03): main shop menu (store) prices; only items still at the old price change. Lemonade + Arizona hidden (on:false;
+// past orders keep their own lines). FP and Mashion menus untouched.
+async function storePrices1103(){ if(await db.kvGet('storePrices1103')) return; const m=await db.get('menus','store');
+  if(m){ let ch=false; for(const [id,from,to] of [['combo1',1099,1249],['combo2',1249,1399],['combo3',1199,1349],['loaded_fries',749,900],['mozz',899,1050],['mac',1499,1500]]){ const it=(m.items||[]).find(i=>i.id===id); if(it&&it.price===from){ it.price=to; ch=true; } }
+    for(const id of ['lemonade','arizona']){ const it=(m.items||[]).find(i=>i.id===id); if(it&&it.on){ it.on=false; ch=true; } } if(ch) await db.put('menus',m); }
+  await db.kvSet('storePrices1103',true); }
 async function ensureCollab(){ const m=await db.get('menus','mashion');
   if(m){ const have=new Set((m.items||[]).map(i=>i.id)); const add=S.MENUS.mashion.filter(i=>S.isCollab(i.id)&&!have.has(i.id)); if(add.length){ m.items=[...(m.items||[]),...add.map(i=>({...i}))]; await db.put('menus',m); } }
   for(const st of S.STAFF) if(st.selfPin&&!(await db.get('staff',st.id))) await putSeedStaff(st);
@@ -80,7 +86,7 @@ export async function boot(){
   if(!await db.kvGet('deviceId')) await db.kvSet('deviceId',db.uid());
   try{ for(const o of await db.all('orders')){ const note=L.repairRiderPayments(o,App.policy||{}); if(o.web?.id==='a290b78a-8b5e-419b-8367-01c646b698b5'&&o.rider&&o.rider.speedwayFare==null){ o.rider.speedwayFare=400; await db.put('orders',o); await db.put('log',{id:db.uid(),at:Date.now(),staffId:'-',staffName:'system',action:'repair-rider-payments',detail:{order:o.orderNo,note:'Speedway charged Rs 400 vs Rs 360 billed: Rs 40 delivery difference expense'}}); }
     if(note){ await db.put('orders',o); await db.put('log',{id:db.uid(),at:Date.now(),staffId:'-',staffName:'system',action:'repair-rider-payments',detail:{order:o.orderNo,note}}); if(o.web&&o.rider?.settledAt) setTimeout(()=>O.enqueue({kind:'patch',remoteId:o.web.id,orderNo:o.orderNo,body:{rider_amount_received:o.rider.amount}}).catch(()=>{}),3000); } } }catch(e){ console.warn('rider repair',e); }
-  await seed(); await migrate(); try{ await ensureCollab(); }catch(e){ console.warn('collab',e); } try{ await mashionPrices(); await mashionHotHoney(); }catch(e){ console.warn('mashion prices',e); } await loadCfg();
+  await seed(); await migrate(); try{ await ensureCollab(); }catch(e){ console.warn('collab',e); } try{ await mashionPrices(); await mashionHotHoney(); await storePrices1103(); }catch(e){ console.warn('mashion prices',e); } await loadCfg();
   if(navigator.storage?.persist){ try{ const t=new Promise(r=>setTimeout(()=>r(false),1500)); const p=await Promise.race([(async()=>await navigator.storage.persisted()||await navigator.storage.persist())(),t]); App.persisted=!!p; }catch{ App.persisted=false; } }
   App.draft=await db.kvGet('draft',null);
   addEventListener('online',renderStatus); addEventListener('offline',renderStatus);

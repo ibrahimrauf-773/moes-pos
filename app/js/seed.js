@@ -16,12 +16,12 @@ const ELLES_MENU=()=>ELLES_ITEMS.map(([id,name,price])=>({id,name,cat:COLLAB_CAT
 // menu: 'store' = in-store + WhatsApp; 'fp' = Foodpanda price list; 'mashion' = bazaar stall (PENDING prices)
 export const MENUS = {
  store:[
-  m('combo1','Combo 1 (2 tenders)','Mains',1099,{heat:true}), m('combo2','Combo 2 (2 sliders)','Mains',1249,{heat:true}),
-  m('combo3','Combo 3 (1 tender + 1 slider)','Mains',1199,{heat:true}), m('loaded_fries','Loaded Fries','Mains',749,{heat:true}),
-  m('mozz','Mozzarella Sticks (3)','Mains',899,{heat:true}), m('mac',"Moe's Mac n Cheese",'Mains',1499,{heat:true}),
+  m('combo1','Combo 1 (2 tenders)','Mains',1249,{heat:true}), m('combo2','Combo 2 (2 sliders)','Mains',1399,{heat:true}),
+  m('combo3','Combo 3 (1 tender + 1 slider)','Mains',1349,{heat:true}), m('loaded_fries','Loaded Fries','Mains',900,{heat:true}),
+  m('mozz','Mozzarella Sticks (3)','Mains',1050,{heat:true}), m('mac',"Moe's Mac n Cheese",'Mains',1500,{heat:true}),
   m('dinner_roll','Extra Dinner Roll','Extras',40), m('moes_sauce',"Extra Sauce (Moe's)",'Extras',120), m('white_sauce','White Sauce','Extras',120),
   m('hot_honey','Hot Honey','Extras',100), m('curly_fries','Curly Fries upgrade','Extras',150),
-  m('baja','Baja Blast','Drinks',199), m('lemonade','Lemonade','Drinks',199), m('arizona','Arizona Ice Tea','Drinks',249),
+  m('baja','Baja Blast','Drinks',199), m('lemonade','Lemonade','Drinks',199,{on:false}), m('arizona','Arizona Ice Tea','Drinks',249,{on:false}),
   m('donut','Glazed Donut','Dessert',399)],
  fp:[
   m('combo1','Combo 1','Combos',1199,{heat:true}), m('combo2','Combo 2','Combos',1349,{heat:true,on:false}), m('combo3','Combo 3','Combos',1299,{heat:true,on:false}),
